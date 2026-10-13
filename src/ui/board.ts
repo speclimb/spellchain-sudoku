@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { candidates, UNITS } from '../game/sudoku';
 import type { FillEvent, Report, Run, Settings } from '../game/types';
+import { boardView, fillSheet, originView } from './board-view';
 
-interface Model { run: Run; prediction: Report | null; selected: number | null; skill: boolean; busy: boolean; inspect?: number | null }
+interface Model { run: Run; prediction: Report | null; selected: number | null; skill: boolean; busy: boolean; inspect?: number | null; legal?: Set<number>; longest?: Set<number> }
 const CELL = 64, PAD = 12;
 const center = (cell: number) => ({ x: PAD + (cell % 9) * CELL + CELL / 2, y: PAD + Math.floor(cell / 9) * CELL + CELL / 2 });
 const chainColor = (ordinal: number) => ordinal >= 12 ? 0xf8edff : ordinal >= 8 ? 0xd6a2ff : ordinal >= 4 ? 0xffbd72 : 0xf2d58d;
@@ -28,24 +29,26 @@ class BoardScene extends Phaser.Scene {
   }
   draw(): void {
     if (!this.ready || !this.model) return;
-    const { run, prediction, selected, skill, inspect } = this.model;
+    const { prediction, selected, skill, inspect, legal = new Set<number>(), longest = new Set<number>() } = this.model;
     const inspecting = inspect != null && !!prediction?.chain;
-    const current = inspecting ? prediction!.chain!.steps[inspect!] : null;
-    // Render the state immediately before this fill, leaving the real run untouched.
-    const cells = [...run.cells];
-    if (inspecting) prediction!.path.slice(0, inspect!).forEach(event => { cells[event.cell] = event.value; });
+    const projected = boardView(this.model.run, prediction, inspecting ? inspect! : null);
+    const { display: run, path, current } = projected;
+    const cells = run.cells;
     const shared = new Set(current?.sharedUnits.flatMap(id => UNITS[id]) ?? []);
     const g = this.ink; g.clear();
     g.fillStyle(0x121e33, 1); g.fillRoundedRect(0, 0, 600, 600, 12);
-    const path = inspecting ? prediction!.path.slice(0, inspect! + 1) : prediction?.path ?? [];
     for (let i = 0; i < 81; i++) {
       const x = PAD + (i % 9) * CELL, y = PAD + Math.floor(i / 9) * CELL;
       const step = path.find(e => e.cell === i);
-      const possible = !cells[i] && ((!inspecting && skill) || candidates(cells, i).length === 1);
+      const possible = !cells[i] && (inspecting ? candidates(cells, i).length === 1 : legal.has(i));
+      const chosen = !inspecting && selected === i;
+      const origin = !inspecting && legal.has(i);
+      const best = !inspecting && longest.has(i);
       const lightBlock = (Math.floor(i / 27) + Math.floor((i % 9) / 3)) % 2 === 0;
-      g.fillStyle(step ? 0x463e2d : shared.has(i) ? 0x23434d : possible ? (skill && !inspecting ? 0x29273e : 0x1b353c) : lightBlock ? 0x19273d : 0x152238, 1);
+      g.fillStyle(chosen ? 0x57472f : step && origin ? 0x35493f : step ? 0x3e392d : shared.has(i) ? 0x23434d : possible ? (skill && !inspecting ? 0x302c43 : 0x203f40) : lightBlock ? 0x19273d : 0x152238, 1);
       g.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-      if (possible && !step) { g.lineStyle(1, skill ? 0x9c8cc0 : 0x639d95, 0.4); g.strokeRoundedRect(x + 7, y + 7, CELL - 14, CELL - 14, 6); }
+      if (origin && !chosen) { g.lineStyle(1.2, best ? 0xc8b5ff : skill ? 0xb6a3d1 : 0x92c7b9, 0.9); g.strokeRoundedRect(x + 5, y + 5, CELL - 10, CELL - 10, 5); }
+      if (best) { g.lineStyle(1, 0xddccff, 0.85); g.strokeRoundedRect(x + 8, y + 8, CELL - 16, CELL - 16, 3); }
       if (current?.from === i) { g.lineStyle(3, 0x8ee0eb, 1); g.strokeRoundedRect(x + 4, y + 4, CELL - 8, CELL - 8, 5); }
       if (inspecting ? current?.cell === i : selected === i) { g.lineStyle(3, 0xf4cf83, 1); g.strokeRoundedRect(x + 3, y + 3, CELL - 6, CELL - 6, 5); }
       const value = cells[i] || step?.value || ((!skill || inspecting) && possible ? candidates(cells, i)[0] : 0);
@@ -53,7 +56,7 @@ class BoardScene extends Phaser.Scene {
       this.digits[i].setAlpha(cells[i] || step ? 1 : 0.83);
       const mark = !cells[i] ? run.marks[i] : null;
       this.marks[i].setText(mark === 'weak' ? '✧' : mark === 'shield' ? '◇' : '').setColor(mark === 'weak' ? '#f2aa89' : '#94cbe0');
-      const prefix = current?.from === i ? '前 ' : current?.cell === i ? current.source === 'root' ? '起点 ' : '次 ' : '';
+      const prefix = current?.from === i ? '前 ' : current?.cell === i ? current.source === 'root' ? '起点 ' : '次 ' : chosen ? '起点 ' : '';
       this.ordinals[i].setText(step ? `${prefix}${step.ordinal}` : '').setOrigin(prefix ? 0 : 0.5, 0.5).setColor(current?.from === i ? '#a0e9f0' : '#e5c783');
     }
     if (path.length > 1) {
@@ -213,28 +216,46 @@ export class Board {
   }
   set(run: Run, prediction: Report | null, selected: number | null, skill: boolean, busy = false, inspect: number | null = null): void {
     if (!busy && this.scene.ready) this.scene.clearEffects();
-    this.scene.model = { run, prediction, selected, skill, busy, inspect }; this.scene.draw();
+    const origins = originView(run, skill, busy);
+    this.scene.model = { run, prediction, selected, skill, busy, inspect, ...origins }; this.scene.draw();
     if (inspect === null) delete this.host.dataset.inspectStep;
     else this.host.dataset.inspectStep = String(inspect);
-    this.accessible.setAttribute('aria-label', inspect === null ? '魔法陣、9行9列のナンプレ' : '連鎖を確認中の魔法陣。水色の枠が直前、金の枠が次のマス。前へ・次へボタンで進みます。');
-    const first = run.cells.findIndex((v, i) => !v && (skill || candidates(run.cells, i).length === 1));
-    const shown = [...run.cells];
-    if (inspect !== null) prediction?.path.slice(0, inspect).forEach(event => { shown[event.cell] = event.value; });
-    const current = inspect !== null ? prediction?.chain?.steps[inspect] : null;
-    this.accessible.innerHTML = shown.map((value, i) => {
-      const possible = !value && ((skill && inspect === null) || candidates(shown, i).length === 1);
-      const number = value || ((!skill || inspect !== null) && possible ? candidates(shown, i)[0] : 0);
-      const status = current?.cell === i ? `次に${run.solution[i]}を入力するマス` : value ? `${run.cells[i] ? '入力済み' : '予告で入力済み'} ${value}${current?.from === i ? '、直前のマス' : ''}` : possible ? (number ? `${number}で確定` : 'スキルで入力可能') : '未確定';
-      const label = `${Math.floor(i / 9) + 1}行${i % 9 + 1}列、${status}${!value && run.marks[i] ? run.marks[i] === 'weak' ? '、弱点' : '、盾' : ''}`;
-      return `<button class="cell-input" data-cell="${i}" role="gridcell" aria-label="${label}" aria-selected="${selected === i}" aria-disabled="${!possible || busy || inspect !== null}" tabindex="${inspect === null && i === (selected ?? first) ? 0 : -1}" ${busy || inspect !== null ? 'disabled' : ''}></button>`;
+    const { display, path, current, sheet } = boardView(run, prediction, inspect);
+    this.host.dataset.sheet = String(sheet);
+    this.host.dataset.legalCount = String(origins.legal.size);
+    this.host.dataset.longestCount = String(origins.longest.size);
+    this.accessible.setAttribute('aria-label', inspect === null ? '魔法陣、9行9列のナンプレ。○は選び直せる起点、●は選択中、★は最長連鎖の起点。' : `シート${sheet}の連鎖を確認中。水色の枠が直前、金の枠が次のマス。前へ・次へボタンで進みます。`);
+    const first = origins.legal.values().next().value;
+    this.accessible.innerHTML = display.cells.map((value, i) => {
+      const possible = inspect === null && origins.legal.has(i);
+      const number = value || ((!skill || inspect !== null) && !value && candidates(display.cells, i).length === 1 ? candidates(display.cells, i)[0] : 0);
+      const isSelected = inspect === null && selected === i;
+      const isLongest = inspect === null && origins.longest.has(i);
+      const inPath = path.some(event => event.cell === i);
+      const status = current?.cell === i ? `次に${display.solution[i]}を入力するマス` : value ? `${run.sheet === sheet && run.cells[i] ? '入力済み' : '予告で入力済み'} ${value}${current?.from === i ? '、直前のマス' : ''}` : possible ? (number ? `${number}で確定` : 'スキルで入力可能') : '未確定';
+      const originLabel = isSelected ? '、選択中の起点' : possible ? '、選び直せる起点' : '';
+      const label = `${Math.floor(i / 9) + 1}行${i % 9 + 1}列、${status}${originLabel}${isLongest ? `、最長${origins.maximum!.length}連鎖の起点` : ''}${inPath ? '、連鎖の予告内' : ''}${!value && display.marks[i] ? display.marks[i] === 'weak' ? '、弱点' : '、盾' : ''}`;
+      return `<button class="cell-input" data-cell="${i}" data-root="${isSelected ? 'selected' : possible ? 'legal' : 'none'}" data-path="${inPath}" data-longest="${isLongest}" role="gridcell" aria-label="${label}" aria-selected="${selected === i && sheet === run.sheet}" aria-disabled="${!possible || busy || inspect !== null}" tabindex="${inspect === null && i === (selected ?? first) ? 0 : -1}" ${busy || inspect !== null ? 'disabled' : ''}><span class="origin-mark" aria-hidden="true">${isLongest ? '★' : isSelected ? '●' : possible ? '○' : ''}</span></button>`;
     }).join('');
   }
-  async animate(before: Run, _after: Run, report: Report, settings: Settings, note: (n: number, completed: boolean) => void, onFill?: (event: FillEvent) => void): Promise<void> {
-    const transient = structuredClone(before);
+  async animate(before: Run, _after: Run, report: Report, settings: Settings, note: (n: number, completed: boolean) => void, onFill?: (event: FillEvent) => void, onSegment?: (segment: NonNullable<Report['segments']>[number], continues: boolean) => Promise<void>, shouldSkip = () => false): Promise<void> {
+    let transient = structuredClone(before);
     if (this.scene.ready) this.scene.clearEffects();
     const delay = settings.reducedMotion ? 0 : Math.min(100, (settings.fast ? 360 : 1050) / Math.max(1, report.path.length));
     let previous: number | null = null;
-    for (const event of report.path) {
+    for (let index = 0; index < report.path.length; index++) {
+      if (shouldSkip()) break;
+      const event = report.path[index];
+      const sheet = fillSheet(event, before.sheet);
+      const segment = report.segments?.find(part => part.sheet === sheet);
+      if (segment && (index === 0 || transient.sheet !== sheet)) {
+        if (this.scene.ready) this.scene.clearEffects();
+        transient = { ...transient, cells: [...segment.cells], solution: [...segment.solution], givens: [...segment.givens], marks: [...segment.marks], sheet, encounterSheet: before.encounterSheet + sheet - before.sheet };
+        previous = null;
+        this.set(transient, null, null, false, true);
+        const sheetLabel = document.querySelector('.sheet-status > span:first-child');
+        if (sheetLabel) sheetLabel.innerHTML = `シート <b>${transient.encounterSheet}</b><small>通算 ${sheet}枚目</small>`;
+      }
       transient.cells[event.cell] = event.value;
       this.scene.model = { run: transient, prediction: null, selected: event.cell, skill: false, busy: true };
       this.scene.draw();
@@ -243,14 +264,18 @@ export class Board {
       onFill?.(event);
       previous = event.cell;
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+      if (segment?.fullClear && index + 1 === segment.pathEnd && !shouldSkip()) {
+        if (!settings.reducedMotion) this.scene.finale({ ...report, fullClear: true, oneCastClear: segment.oneCastClear, clearRatio: segment.clearRatio }, settings.fast);
+        await onSegment?.(segment, index + 1 < report.path.length);
+      }
     }
-    for (const cell of report.sweep) transient.cells[cell] = before.solution[cell];
-    // The reducer may already hold the next sheet. Keep this spell's sheet visible
-    // until the caller has shown damage and retaliation, then render the real run.
-    this.scene.model = { run: transient, prediction: null, selected: null, skill: false, busy: true }; this.scene.draw();
+    if (shouldSkip()) { if (this.scene.ready) this.scene.clearEffects(); return; }
+    for (const cell of report.sweep) transient.cells[cell] = transient.solution[cell];
+    // Keep the terminal sheet visible until the one final attack/counter resolves.
+    this.set(transient, null, null, false, true);
     if (!settings.reducedMotion) {
       this.scene.sweep(report.sweep, settings.fast);
-      this.scene.finale(report, settings.fast);
+      if (!report.segments?.at(-1)?.fullClear) this.scene.finale({ ...report, fullClear: false, oneCastClear: false }, settings.fast);
       await new Promise(resolve => setTimeout(resolve, settings.fast ? 100 : 200));
     }
   }

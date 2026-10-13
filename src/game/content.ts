@@ -1,10 +1,12 @@
-import type { CharacterId, RelicId, RepeatableRewardId, RewardId, Run } from './types';
+import type { CharacterId, GreaterRelicId, RelicId, RepeatableRewardId, RewardId, Run } from './types';
 export interface Character { id: CharacterId; name: string; symbol: string; title: string; passive: string; skill: string; skillName: string; unlock: number; affinity: RelicId[] }
 export const CHARACTERS: Character[] = [
   { id: 'fuse', name: '導火術師', symbol: '✦', title: '連鎖をつなぐ者', passive: '自動入力回数＋1', skillName: '星火連環', skill: '任意の空きマスから始動。この手の自動入力回数をさらに＋4。', unlock: 0, affinity: ['wick', 'echo', 'rekindle', 'lens'] },
   { id: 'scribe', name: '紋章術師', symbol: '◇', title: '完成を力に変える者', passive: '完成ダメージ＋10／単位', skillName: '大紋章の詠唱', skill: '任意の空きマスから始動。この手の完成ダメージを3倍。', unlock: 3, affinity: ['pen', 'ward', 'rekindle', 'stroke'] },
   { id: 'lumen', name: '蓄光術師', symbol: '☾', title: '魔力を解き放つ者', passive: '通常入力の手で魔力を追加＋1', skillName: '月光解放', skill: '任意の空きマスから始動。この手の総ダメージを2倍。', unlock: 12, affinity: ['battery', 'amplifier', 'afterglow', 'stroke'] },
 ];
+export const primeIds: RelicId[] = ['duality', 'trinity', 'quint', 'sept'];
+export const greaterIds: GreaterRelicId[] = ['stroke', 'trinity', 'duality', 'quint', 'sept', 'lens', 'wick'];
 export interface Relic { id: RelicId; name: string; symbol: string; kind: string; description: string; unlock: number }
 export const RELICS: Relic[] = [
   { id: 'wick', name: '長い導火線', symbol: '〰', kind: '連鎖', description: '自動入力回数＋2。もう少し先まで、魔法をつなぐ。', unlock: 0 },
@@ -19,6 +21,9 @@ export const RELICS: Relic[] = [
   { id: 'lens', name: '弱点のレンズ', symbol: '⌖', kind: '技巧', description: '弱点マスの追加ダメージを8から20にする。', unlock: 0 },
   { id: 'glass', name: '硝子の杖', symbol: '⟡', kind: '代償', description: '総ダメージ1.25倍。代わりに最大HP−8。現在HPも新しい上限まで下がる。', unlock: 0 },
   { id: 'trinity', name: '三の護符', symbol: 'Ⅲ', kind: '確率', description: '数字「3」を埋めた手で30％の確率でダメージ1.5倍（シート完成の追加分を除く）。再取得で確率が45％、60％へ上がる（取得は3回まで）。', unlock: 0 },
+  { id: 'duality', name: '二の護符', symbol: 'Ⅱ', kind: '確率', description: '数字「2」を埋めた手で30％の確率で、守護を引いた後の反撃を25％軽減。再取得で確率45％、60％（3回まで）。軽減の合計上限は60％。', unlock: 0 },
+  { id: 'quint', name: '五の護符', symbol: 'Ⅴ', kind: '確率', description: '数字「5」を埋めた手で30％の確率で、魔力を使わないスキル券を1枚獲得（所持上限1枚）。券を持つ手・無料スキルの手は抽選しない。再取得で確率45％、60％（3回まで）。', unlock: 0 },
+  { id: 'sept', name: '七の護符', symbol: 'Ⅶ', kind: '確率', description: '数字「7」を埋めた手で30％の確率で、次の1手の自動入力回数＋7を予約。予約は1件までで加算されない。再取得で確率45％、60％（3回まで）。', unlock: 0 },
   { id: 'gold', name: '黄金のインク', symbol: '✧', kind: '得点', description: '攻撃から得るスコアを1.5倍。ダメージは変化しない。', unlock: 0 },
 ];
 export const ENEMIES = [
@@ -58,17 +63,26 @@ export function enemyOf(stage: number, balanceVersion: 1 | 2 = 2) {
 export const REPEATABLE_REWARDS: { id: RepeatableRewardId; name: string; symbol: string; kind: string; description: string }[] = [
   { id: 'training', name: '術式の鍛錬', symbol: '✦', kind: '鍛錬', description: '術式レベル＋1。攻撃倍率＋0.2・自動入力回数＋1・最大HP＋4、HPを10回復。何度でも選べる。' },
   { id: 'vitality', name: '生命の器', symbol: '♡', kind: '成長', description: '最大HP＋12、HPを12回復。何度でも選べる。' },
+  { id: 'magic-boon', name: '魔力の祝福', symbol: '✵', kind: '祝福', description: 'これから5戦、戦闘開始時に魔力を8へ。蓄電の超過分はそのまま。同じ祝福は重ならず、再取得で残り5戦へ更新。' },
+  { id: 'defense-boon', name: '守護の祝福', symbol: '⬡', kind: '祝福', description: 'これから5戦、守護を引いた後の反撃を25％軽減。二の護符と合計で最大60％。同じ祝福は重ならず、再取得で残り5戦へ更新。' },
   { id: 'recovery', name: '癒しの泉', symbol: '✚', kind: '回復', description: 'HPを全回復。何度でも選べる。' },
 ];
 export const characterOf = (id: CharacterId) => CHARACTERS.find(c => c.id === id)!;
 export const relicOf = (id: RelicId) => RELICS.find(r => r.id === id)!;
-/** Descriptions use current acquisition rank and tier; missing map entries mean rank/tier 1. */
+/** Descriptions use current acquisition rank and tier; missing entries mean rank/tier 1. */
 export function relicDescription(id: RelicId, run?: Run): string {
-  if (id === 'stroke') return `各手で最初に埋めた${run?.tier?.stroke === 2 ? 5 : 3}マスのダメージを2倍。連鎖が長くなっても有効。`;
-  if (id === 'trinity') {
-    const rank = run?.acquisitionRank?.trinity ?? 1, chance = [30, 45, 60][rank - 1];
-    const multiplier = run?.tier?.trinity === 2 ? 2 : 1.5;
-    return `数字「3」を埋めた手で${chance}％の確率でダメージ${multiplier}倍（シート完成の追加分を除く）。${rank < 3 ? `再取得で確率が${rank === 1 ? '45％、60％' : '60％'}へ上がる（取得は3回まで）。` : '取得上限の3回に到達。'}`;
+  const upper = run?.tier?.[id] === 2;
+  if (id === 'stroke') return `各手で最初に埋めた${upper ? 5 : 3}マスのダメージを2倍。連鎖が長くなっても有効。`;
+  if (id === 'lens' && upper) return '弱点マスの追加ダメージを20にする。各起点からの確定連鎖を比べ、通常入力・スキルそれぞれで最長になるすべての起点を示す。';
+  if (id === 'wick' && upper) return '自動入力回数＋2。シートを完成させても回数が残っていれば、次のシートへ詠唱を続ける。新しいシートの始動にも1回使う。';
+  if (primeIds.includes(id)) {
+    const rank = run?.acquisitionRank?.[id] ?? 1, chance = [30, 45, 60][rank - 1];
+    const effect = id === 'trinity' ? `ダメージ${upper ? 2 : 1.5}倍（シート完成の追加分を除く）`
+      : id === 'duality' ? `守護を引いた後の反撃を${upper ? 50 : 25}％軽減（合計上限60％）`
+      : id === 'quint' ? `魔力を使わないスキル券を${upper ? 2 : 1}枚獲得（所持上限${upper ? 2 : 1}枚）。券を持つ手・無料スキルの手は抽選しない`
+      : `次の1手の自動入力回数＋${upper ? 14 : 7}を予約（予約は1件、加算なし）`;
+    const digit = { duality: 2, trinity: 3, quint: 5, sept: 7 }[id as 'duality' | 'trinity' | 'quint' | 'sept'];
+    return `数字「${digit}」を埋めた手で${chance}％の確率で${effect}。${rank < 3 ? `再取得で確率が${rank === 1 ? '45％、60％' : '60％'}へ上がる（取得は3回まで）。` : '取得上限の3回に到達。'}`;
   }
   return relicOf(id).description;
 }
@@ -83,17 +97,24 @@ export function rewardOf(id: RewardId, run?: Run) {
     id, name: '固有スキル強化', symbol: '✦', kind: 'ボス報酬',
     description: run ? `${characterOf(run.character).skillName}をランク2へ。${skillDescription({ character: run.character, skillRank: 2 })}` : '固有スキルをランク1から2へ強化。術式レベルとは別の成長。',
   };
-  if (id === 'greater:stroke' || id === 'greater:trinity') {
-    const relicId = id.slice(8) as 'stroke' | 'trinity', relic = relicOf(relicId);
-    return { ...relic, id, name: `上位・${relic.name}`, kind: 'ボス報酬', description: relicId === 'stroke'
-      ? '一筆の杖を上位へ置き換える。2倍になる範囲が各手の最初の3マスから5マスへ広がる。倍率は重複しない。'
-      : `三の護符を上位へ置き換える。発動時のダメージが1.5倍から2倍へ（シート完成の追加分を除く）。発動確率は${[30, 45, 60][(run?.acquisitionRank?.trinity ?? 1) - 1]}％のまま。倍率は重複しない。` };
+  if (id.startsWith('greater:')) {
+    const relicId = id.slice(8) as GreaterRelicId, relic = relicOf(relicId);
+    const changes: Record<GreaterRelicId, string> = {
+      stroke: '2倍になる範囲が各手の最初の3マスから5マスへ広がる。倍率は重複しない。',
+      trinity: '発動時のダメージが1.5倍から2倍へ（シート完成の追加分を除く）。発動確率はそのまま。倍率は重複しない。',
+      duality: '発動時の反撃軽減が25％から50％へ。守護を引いた後に適用し、祝福との合計上限は60％。発動確率はそのまま。',
+      quint: '発動時の無料スキル券が1枚から2枚へ、所持上限も2枚へ。券を先に使い、魔力と超過分はそのまま残す。券を持つ手・無料スキルの手は抽選しない。',
+      sept: '次の1手へ予約する自動入力回数が＋7から＋14へ。予約は1件までで加算されない。発動確率はそのまま。',
+      lens: '弱点ダメージ＋20を保ち、通常入力・スキルそれぞれで最長の確定連鎖になるすべての起点を示す。',
+      wick: '自動入力回数＋2を保ち、シート完成後の残り回数で次のシートへ詠唱を続ける。次の始動に1回使う。連鎖数と各手1回の効果は引き継ぐ。',
+    };
+    return { ...relic, id, name: `上位・${relic.name}`, kind: 'ボス報酬', description: `${relic.name}を上位へ置き換える。${changes[relicId]}` };
   }
   const relic = RELICS.find(r => r.id === id);
   if (relic) {
-    if (id === 'trinity' && run?.inventory.includes(id)) {
-      const nextRank = Math.min(3, (run.acquisitionRank.trinity ?? 1) + 1);
-      return { ...relic, name: `${relic.name}（取得${nextRank}回目）`, description: `発動確率を${[30, 45, 60][nextRank - 1]}％へ強化。発動時のダメージ${run.tier.trinity === 2 ? 2 : 1.5}倍はそのまま（シート完成の追加分を除く）。取得は3回まで。` };
+    if (primeIds.includes(relic.id) && run?.inventory.includes(relic.id)) {
+      const nextRank = Math.min(3, (run.acquisitionRank[relic.id] ?? 1) + 1);
+      return { ...relic, name: `${relic.name}（取得${nextRank}回目）`, description: `発動確率を${[30, 45, 60][nextRank - 1]}％へ強化。効果と上位段階はそのまま。取得は3回まで。` };
     }
     return { ...relic, description: relicDescription(relic.id, run) };
   }

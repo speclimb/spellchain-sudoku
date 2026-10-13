@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { enemyOf } from '../src/game/content';
+import { enemyOf, greaterIds, primeIds } from '../src/game/content';
 import { chainCapacity, dispatch, newSave, previewAction, resolveAction, spellMultiplier, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
 import { Random, singles } from '../src/game/sudoku';
@@ -142,21 +142,23 @@ describe('Trinity ranks and deterministic per-cast uncertainty', () => {
 });
 
 describe('boss milestones, duplicate caps and skill growth', () => {
-  it.each([4, 9, 14])('offers a skill upgrade and exactly two Greater rewards after encounter index %i', stage => {
+  it.each([4, 9, 14])('offers a skill upgrade and two Greater rewards including a build-defining upgrade after encounter index %i', stage => {
     const run = rewardFixture(stage);
     expect(run.rewards).toHaveLength(3);
     expect(run.rewards).toContain('skill-upgrade');
-    expect(run.rewards.filter(id => id.startsWith('greater:')).sort()).toEqual(['greater:stroke', 'greater:trinity']);
+    expect(run.rewards.filter(id => id.startsWith('greater:'))).toHaveLength(2);
+    expect(run.rewards.some(id => id === 'greater:lens' || id === 'greater:wick')).toBe(true);
     expect(new Set(run.rewards).size).toBe(3);
   });
-  it('fills all three boss slots with distinct repeatables when both Greater families and skill rank are capped', () => {
+  it('offers training and the two boons when every Greater family is owned', () => {
     const run = fixture().run!; run.stage = 9; run.stats.kills = 9; run.enemyHp = 1;
-    run.skillRank = 2; run.inventory = ['stroke', 'trinity']; run.tier = { stroke: 2, trinity: 2 }; run.acquisitionRank.trinity = 3;
+    run.skillRank = 2; run.inventory = [...greaterIds]; run.tier = Object.fromEntries(greaterIds.map(id => [id, 2])); run.acquisitionRank.trinity = 3;
     const reward = resolveAction(run, play(run));
-    expect([...reward.rewards].sort()).toEqual(['recovery', 'training', 'vitality']);
+    expect([...reward.rewards].sort()).toEqual(['defense-boon', 'magic-boon', 'training']);
   });
   it('allows Trinity duplicates only through rank three, while excluding capped and one-copy relics', () => {
     const run = fixture().run!; run.inventory = [...run.pool]; run.enemyHp = 1;
+    for (const id of primeIds.filter(id => id !== 'trinity')) run.acquisitionRank[id] = 3;
     expect(run.pool).toContain('trinity');
     const rankOne = resolveAction(run, play(run));
     expect(rankOne.rewards).toContain('trinity');
@@ -179,7 +181,7 @@ describe('boss milestones, duplicate caps and skill growth', () => {
   });
   it('Greater acquisition replaces the family tier instead of inserting a second inventory item', () => {
     for (const id of ['stroke', 'trinity'] as const) {
-      const reward = rewardFixture(4); reward.inventory = [id];
+      const reward = rewardFixture(4); reward.inventory = [id]; reward.rewards = [`greater:${id}`];
       const next = choose(reward, `greater:${id}`);
       expect(next.inventory.filter(relic => relic === id)).toHaveLength(1);
       expect(next.tier[id]).toBe(2);

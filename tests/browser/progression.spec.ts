@@ -77,7 +77,12 @@ test('mobile: fifth boss offers rank upgrade and two Greater relics, and repeate
   await expect(page.locator('.endless-track')).toContainText('BOSS');
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
-  const committed = await saved(page); expect(committed.run!.rewards.slice().sort()).toEqual(['greater:stroke', 'greater:trinity', 'skill-upgrade']);
+  const committed = await saved(page);
+  expect(committed.run!.rewards).toContain('skill-upgrade');
+  const upperChoices = committed.run!.rewards.filter(id => id.startsWith('greater:'));
+  expect(upperChoices).toHaveLength(2);
+  expect(upperChoices.every(id => ['greater:stroke', 'greater:duality', 'greater:trinity', 'greater:quint', 'greater:sept', 'greater:lens', 'greater:wick'].includes(id))).toBe(true);
+  expect(upperChoices.some(id => id === 'greater:lens' || id === 'greater:wick')).toBe(true);
   await resume(page);
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
   expect(await saved(page)).toEqual(committed);
@@ -157,7 +162,8 @@ test(`one-cast completion has additive breakdown and stable reload (reduced moti
   });
   expect(damageLineCount).toBe(1);
   await page.locator('.prediction-breakdown summary').click();
-  await expect(page.locator('.prediction-breakdown')).toContainText('この手36/36マス');
+  await expect(page.locator('.prediction-breakdown')).toContainText('シート1');
+  await expect(page.locator('.prediction-breakdown')).toContainText('36/36マス');
   await expect(page.locator('.prediction-breakdown')).toContainText(`＋${fixture.report.clearBonus.toLocaleString('ja-JP')}`);
   await page.evaluate(() => {
     const audit = { shown: false, animations: -1 };

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import bank from '../src/game/puzzles.json';
-import { CHARACTERS, ENEMIES, REPEATABLE_REWARDS, RELICS, characterOf, enemyOf, rewardOf } from '../src/game/content';
-import { chainBonus, chainCapacity, dispatch, incomingAttack, newSave, previewAction, resolveAction, sheetShield, spellMultiplier, startRun } from '../src/game/engine';
+import { CHARACTERS, ENEMIES, REPEATABLE_REWARDS, RELICS, primeIds, characterOf, enemyOf, rewardOf } from '../src/game/content';
+import { canUseSkill, chainBonus, chainCapacity, dispatch, incomingAttack, newSave, previewAction, resolveAction, sheetShield, spellMultiplier, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
 import { candidates, countSolutions, PEERS, singles, solveSingles, UNITS } from '../src/game/sudoku';
 import type { CharacterId, Run, Save } from '../src/game/types';
@@ -19,7 +19,7 @@ function leaveLastCell(run: Run): number {
 }
 function informedAction(run: Run) {
   const choices = singles(run.cells).map(cell => ({ cell, skill: false, report: previewAction(run, cell) }));
-  if (run.mana === 8) run.cells.forEach((value, cell) => { if (!value) choices.push({ cell, skill: true, report: previewAction(run, cell, true) }); });
+  if (canUseSkill(run)) run.cells.forEach((value, cell) => { if (!value) choices.push({ cell, skill: true, report: previewAction(run, cell, true) }); });
   expect(choices.length).toBeGreaterThan(0);
   const value = (choice: typeof choices[number]) => (choice.report.defeated ? 10000 : 0) + Math.min(run.enemyHp, choice.report.damage) - choice.report.received * 15;
   choices.sort((a, b) => value(b) - value(a));
@@ -27,8 +27,8 @@ function informedAction(run: Run) {
 }
 function informedReward(run: Run) {
   if (run.rewards.includes('recovery') && run.hp < run.maxHp * 0.65) return { type: 'reward' as const, relic: 'recovery' as const, revision: run.revision };
-  const preference = ['skill-upgrade', 'greater:stroke', 'greater:trinity', 'ward', 'wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'amplifier', 'battery', 'afterglow', 'stroke', 'trinity', 'training', 'vitality', 'recovery', 'gold'];
-  const relic = [...run.rewards].sort((a, b) => preference.indexOf(a) - preference.indexOf(b))[0];
+  const preference = ['skill-upgrade', 'greater:wick', 'greater:lens', 'greater:stroke', 'greater:trinity', 'greater:duality', 'greater:quint', 'greater:sept', 'magic-boon', 'defense-boon', 'duality', 'quint', 'sept', 'ward', 'wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'amplifier', 'battery', 'afterglow', 'stroke', 'trinity', 'training', 'vitality', 'recovery', 'gold'];
+  const relic = [...run.rewards].sort((a, b) => (preference.includes(a) ? preference.indexOf(a) : 999) - (preference.includes(b) ? preference.indexOf(b) : 999))[0];
   return { type: 'reward' as const, relic, revision: run.revision };
 }
 interface EncounterSample {
@@ -43,7 +43,7 @@ function recordEncounter(samples: EncounterSample[], before: Run, after: Run) {
     samples.push(sample);
   }
   const report = after.lastReport!;
-  sample.moves++; sample.sheets = before.encounterSheet; sample.filled += report.path.length;
+  sample.moves++; sample.sheets = Math.max(before.encounterSheet, after.encounterSheet); sample.filled += report.path.length;
   sample.levelEnd = after.spellLevel; sample.maxChain = Math.max(sample.maxChain, report.path.length);
   sample.damage += report.damage; sample.maxDamage = Math.max(sample.maxDamage, report.damage);
 }
@@ -75,7 +75,7 @@ describe('deterministic actions', () => {
   it('makes preview identical to execution, without changing state or the random stream', () => {
     for (const character of CHARACTERS) {
       const run = fixture(71, character.id).run!;
-      run.inventory = RELICS.filter(r => r.id !== 'trinity').map(r => r.id); run.maxHp = 32; run.hp = 32; run.mana = 8;
+      run.inventory = RELICS.filter(r => !primeIds.includes(r.id)).map(r => r.id); run.maxHp = 32; run.hp = 32; run.mana = 8;
       const before = JSON.stringify(run);
       for (const cell of singles(run.cells)) {
         for (const skill of [false, true]) {
@@ -284,7 +284,7 @@ describe('progression, rewards and persistence', () => {
   it('keeps offering deterministic repeatable rewards as the unique relic pool runs out', () => {
     for (const missing of [2, 1, 0]) {
       const save = fixture(43), run = save.run!;
-      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); run.acquisitionRank.trinity = 3; run.enemyHp = 1;
+      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); for (const id of primeIds) run.acquisitionRank[id] = 3; run.enemyHp = 1;
       const next = dispatch(save, play(run));
       expect(next.run!.phase).toBe('reward'); expect(next.run!.stats.kills).toBe(13);
       expect(next.run!.rewards).toHaveLength(3); expect(new Set(next.run!.rewards).size).toBe(3);
@@ -417,12 +417,12 @@ describe('progression, rewards and persistence', () => {
   });
   it('unlocks by cumulative clears and freezes the relic pool for the current run', () => {
     const save = fixture(13, 'fuse', 2); save.run!.enemyHp = 1;
-    expect(save.run!.pool).toHaveLength(10);
+    expect(save.run!.pool).toHaveLength(13);
     const next = dispatch(save, play(save.run!));
     expect(next.meta.clears).toBe(3); expect(next.run!.pool).not.toContain('echo');
     expect(startRun(next, 'scribe', 2).run!.pool).toContain('echo');
     expect(() => startRun(next, 'lumen', 2)).toThrow();
-    expect(fixture(1, 'lumen', 12).run!.pool).toHaveLength(13);
+    expect(fixture(1, 'lumen', 12).run!.pool).toHaveLength(16);
   });
   it('offers three distinct unowned relics with an affinity option when available', () => {
     for (const c of CHARACTERS) {
@@ -467,7 +467,10 @@ describe('progression, rewards and persistence', () => {
         recordEncounter(encounters, run, save.run!);
         if (save.run!.sheet !== run.sheet) {
           const source = save.run!.puzzleOrder[save.run!.puzzleCursor];
-          if (save.run!.puzzleCursor === 0) { expect(visited.at(-1)).not.toBe(source); visited.length = 0; }
+          // One upper-Wick cast can cross the deck boundary and end beyond cursor zero.
+          if (run.puzzleCursor + save.run!.sheet - run.sheet >= run.puzzleOrder.length) {
+            expect(save.run!.puzzleOrder[0]).not.toBe(run.puzzleOrder.at(-1)); visited.length = 0;
+          }
           expect(visited).not.toContain(source); visited.push(source);
         }
         expect(parseSave(JSON.stringify(save))).toEqual(save);
@@ -480,13 +483,13 @@ describe('progression, rewards and persistence', () => {
     }
     mkdirSync('.runtime', { recursive: true });
     writeFileSync('.runtime/balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
-  }, 60000);
-  it('lets every character reach long chains without Trinity before enemy inflation outgrows the run', () => {
+  }, 180000);
+  it('lets every character reach long chains without prime charms before enemy inflation outgrows the run', () => {
     const results: { character: CharacterId; seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; encounters: EncounterSample[] }[] = [];
     for (const character of CHARACTERS) {
       for (let seed = 21; seed <= 24; seed++) {
         let save = fixture(seed, character.id, 12);
-        save.run!.pool = save.run!.pool.filter(id => id !== 'trinity');
+        save.run!.pool = save.run!.pool.filter(id => !primeIds.includes(id));
         const encounters: EncounterSample[] = [];
         while (save.run!.phase === 'battle' || save.run!.phase === 'reward') {
           const run = save.run!;
@@ -503,6 +506,6 @@ describe('progression, rewards and persistence', () => {
       }
     }
     mkdirSync('.runtime', { recursive: true });
-    writeFileSync('.runtime/character-balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play, Trinity excluded from every character pool, ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
-  }, 60000);
+    writeFileSync('.runtime/character-balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play, All four prime charms excluded from every character pool, ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
+  }, 180000);
 });

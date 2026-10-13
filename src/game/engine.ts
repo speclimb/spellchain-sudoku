@@ -1,7 +1,9 @@
 import bank from './puzzles.json';
-import { CHARACTERS, RELICS, REPEATABLE_REWARDS, characterOf, enemyOf } from './content';
+import { CHARACTERS, RELICS, enemyOf } from './content';
+import { canTakeReward, rollRewards } from './rewards';
+export { canTakeReward } from './rewards';
 import { Random, PEERS, UNITS, candidates, near, row, col } from './sudoku';
-import type { Action, ChainTrace, FillEvent, Mark, Report, Preview, Run, Save, CharacterId, RelicId, RewardId, GreaterRelicId } from './types';
+import type { Action, ChainTrace, FillEvent, Mark, Report, Preview, Run, Save, CharacterId, RelicId, PrimeEffect, PrimeRelicId, PrimeProcOutcome, SheetSegment } from './types';
 
 export function newSave(): Save {
   return { version: 1, meta: { clears: 0, runs: 0, wins: 0, bestScore: 0, bestKills: 0, tutorialDone: false }, run: null, settings: { sound: false, fast: false, reducedMotion: false } };
@@ -42,6 +44,7 @@ export function chainBonuses(run: Run, skill = false): ChainTrace['bonuses'] {
   if (run.inventory.includes('wick')) bonuses.push({ label: '長い導火線', amount: 2 });
   if (skill && run.character === 'fuse') bonuses.push({ label: '導火術師スキル', amount: 4 });
   if (!skill && run.afterglow) bonuses.push({ label: '残光の灯', amount: 2 });
+  if (run.reservedAuto) bonuses.push({ label: '七の護符・予約', amount: run.reservedAuto });
   return bonuses;
 }
 export const chainCapacity = (run: Run, skill = false): number => chainBonuses(run, skill).reduce((sum, bonus) => sum + bonus.amount, 0);
@@ -67,6 +70,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0, balanceVersion: 2, castCounter: 0,
     character, skillRank: 1, stage: 0, turn: 0, phase: 'battle', cells: [], solution: [], givens: [], marks: [],
     puzzleOrder: random.shuffle(bank.map((_, i) => i)), puzzleCursor: 0, sheet: 1, encounterSheet: 1, spellLevel: 1,
+    freeSkillTokens: 0, reservedAuto: 0, boons: { defense: 0, magic: 0 },
     hp: 40, maxHp: 40, mana: 0, manaOverflow: 0, enemyHp: 0, score: 0, inventory: [], acquisitionRank: {}, tier: {},
     pool: RELICS.filter(r => r.unlock <= save.meta.clears).map(r => r.id), rewards: [], afterglow: false,
     stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0, sheets: 0 }, lastReport: null,
@@ -79,47 +83,73 @@ export function incomingAttack(run: Run): number {
   const enemy = enemyOf(run.stage, run.balanceVersion);
   return Math.min(Number.MAX_SAFE_INTEGER, enemy.attack * (enemy.strongEvery && (run.turn + 1) % enemy.strongEvery === 0 ? 2 : 1));
 }
-const greaterIds: GreaterRelicId[] = ['stroke', 'trinity'];
-export function canTakeReward(run: Run, id: RewardId): boolean {
-  const boss = run.balanceVersion === 2 && (run.stage + 1) % 5 === 0;
-  if (id === 'skill-upgrade') return boss && run.skillRank < 2;
-  if (id.startsWith('greater:')) {
-    const relic = id.slice(8) as GreaterRelicId;
-    return boss && greaterIds.includes(relic) && run.pool.includes(relic) && relicTier(run, relic) < 2;
-  }
-  if (REPEATABLE_REWARDS.some(reward => reward.id === id)) return true;
-  if (boss) return false;
-  const relic = id as RelicId;
-  return run.pool.includes(relic) && (!run.inventory.includes(relic) || relic === 'trinity' && relicRank(run, relic) < 3);
+export const canUseSkill = (run: Run): boolean => run.mana >= 8 || (run.freeSkillTokens ?? 0) > 0;
+export function legalOrigins(run: Run, skill = false): number[] {
+  if (run.phase !== 'battle' || (skill && !canUseSkill(run))) return [];
+  return run.cells.flatMap((value, cell) => !value && (skill || candidates(run.cells, cell).length === 1) ? [cell] : []);
 }
-function rollRewards(run: Run, random: Random): RewardId[] {
-  let chosen: RewardId[];
-  if (run.balanceVersion === 2 && (run.stage + 1) % 5 === 0) {
-    chosen = run.skillRank < 2 ? ['skill-upgrade'] : [];
-    chosen.push(...random.shuffle(greaterIds.map(id => `greater:${id}` as RewardId).filter(id => canTakeReward(run, id))).slice(0, 2));
-  } else {
-    const available = random.shuffle(run.pool.filter(id => canTakeReward(run, id)));
-    const match = available.find(id => characterOf(run.character).affinity.includes(id));
-    chosen = match ? [match, ...available.filter(id => id !== match).slice(0, 2)] : available.slice(0, 3);
-  }
-  chosen.push(...random.shuffle(REPEATABLE_REWARDS.map(reward => reward.id)).slice(0, 3 - chosen.length));
-  return random.shuffle(chosen);
-}
+interface CastPlan { run: Run; report: Report; effects: PrimeEffect[] }
+const primeDigits: Record<PrimeRelicId, number> = { duality: 2, trinity: 3, quint: 5, sept: 7 };
 
-interface CastPlan { run: Run; report: Report; chance: number; procMultiplier: number }
-/** Only deterministic board/path work. No RNG, reward roll or next-board generation. */
+/** A local, no-RNG lookahead for the fresh sheet's deterministic entry point.
+ * It spends one auto for entry and preserves once-per-cast rekindle/hop state.
+ * It does not recurse into another sheet: only this sheet's length breaks ties. */
+function measureSheet(source: Run, root: number, fuel: number, rekindled: boolean, hopped: boolean, skill: boolean): number {
+  const cells = [...source.cells];
+  let current = root, count = 0;
+  const fill = (target: number) => {
+    cells[target] = source.solution[target]; fuel--; count++;
+    if (!rekindled && source.inventory.includes('rekindle') && UNITS.some(unit => unit.includes(target) && unit.every(i => cells[i]))) { fuel += 3; rekindled = true; }
+    current = target;
+  };
+  fill(root);
+  while (fuel > 0) {
+    let eligible = PEERS[current].filter(i => !cells[i] && candidates(cells, i).length === 1).sort((a, b) => near(current, a, b));
+    if (!eligible.length && skill && source.character === 'fuse' && source.skillRank === 2 && !hopped) {
+      eligible = cells.flatMap((v, i) => !v && source.solution[i] === source.solution[current] ? [i] : []).sort((a, b) => near(current, a, b));
+      if (eligible.length) hopped = true;
+    }
+    if (eligible[0] === undefined) break;
+    fill(eligible[0]);
+  }
+  return count;
+}
+/** Deterministic path/board plan. The only RNG is a private clone used to reveal
+ * fresh sheets; source state and the effect/reward streams remain untouched. */
 function planCast(source: Run, cell: number, skill: boolean): CastPlan {
   if (source.phase !== 'battle' || !Number.isInteger(cell) || cell < 0 || cell >= 81 || source.cells[cell]) throw new Error('空きマスを選んでください。');
-  if (skill ? source.mana < 8 : candidates(source.cells, cell).length !== 1) throw new Error(skill ? '魔力が足りません。' : '数字が確定したマスを選んでください。');
-  const run = structuredClone(source), has = (id: RelicId) => run.inventory.includes(id);
+  if (skill ? !canUseSkill(source) : candidates(source.cells, cell).length !== 1) throw new Error(skill ? '魔力か無料スキルが必要です。' : '数字が確定したマスを選んでください。');
+  const run = structuredClone(source), has = (id: RelicId) => run.inventory.includes(id), boardRandom = new Random(source.randomState);
   const bonuses = chainBonuses(run, skill);
   let fuel = bonuses.reduce((sum, bonus) => sum + bonus.amount, 0);
   const chain: ChainTrace = { initialAuto: fuel, bonuses, steps: [], stopReason: 'no-target', remainingAuto: fuel };
-  const initiallySingle = source.cells.map((value, target) => !value && candidates(source.cells, target).length === 1);
+  run.reservedAuto = 0;
   if (!skill) run.afterglow = false;
-  let base = 0, completion = 0, weak = 0, rekindled = false, hopped = false;
-  const path: FillEvent[] = [];
-  const fill = (target: number, kind: FillEvent['source'], from: number | null, eligibleCells: number[], hop = false) => {
+  let rekindled = false, hopped = false, maxShield = sheetShield(source), rawDamage = 0;
+  let multiplier = spellMultiplier(source.spellLevel) * (has('glass') ? 1.25 : 1);
+  if (skill && has('amplifier')) multiplier *= 1.5;
+  if (skill && run.character === 'lumen') multiplier *= run.skillRank === 2 ? 2.5 : 2;
+  const completionMultiplier = skill && run.character === 'scribe' ? (run.skillRank === 2 ? 4 : 3) : 1;
+  const path: FillEvent[] = [], segments: SheetSegment[] = [];
+  let segment: SheetSegment, initiallySingle: boolean[];
+  const beginSegment = () => {
+    segment = { sheet: run.sheet, cells: [...run.cells], solution: [...run.solution], givens: [...run.givens], marks: [...run.marks],
+      pathStart: path.length, pathEnd: path.length, baseDamage: 0, clearBonus: 0, clearRatio: 0, fullClear: false, oneCastClear: false };
+    initiallySingle = run.cells.map((value, target) => !value && candidates(run.cells, target).length === 1);
+    rawDamage = 0;
+  };
+  const endSegment = () => {
+    segment.pathEnd = path.length; segment.fullClear = run.cells.every(Boolean);
+    segment.baseDamage = Math.floor(rawDamage * multiplier);
+    const blanks = segment.givens.filter(given => !given).length, filled = segment.pathEnd - segment.pathStart;
+    segment.clearRatio = segment.fullClear && blanks ? filled / blanks : 0;
+    segment.clearBonus = segment.fullClear && blanks ? Math.floor(segment.baseDamage * filled / (4 * blanks)) : 0;
+    segment.oneCastClear = segment.fullClear && filled === blanks && segment.cells.every((value, i) => segment.givens[i] || value === 0);
+    maxShield = Math.max(maxShield, sheetShield(run));
+    segments.push(segment);
+  };
+  beginSegment();
+  const fill = (target: number, kind: FillEvent['source'], from: number | null, eligibleCells: number[], hop = false, sheetStart = false) => {
     if (run.cells[target]) throw new Error('同じマスを二度埋めることはできません。');
     const candidateValues = candidates(run.cells, target), remainingBefore = fuel;
     const distance = (i: number) => from === null ? 0 : Math.abs(row(from) - row(i)) + Math.abs(col(from) - col(i));
@@ -127,29 +157,40 @@ function planCast(source: Run, cell: number, skill: boolean): CastPlan {
     if (kind === 'chain') fuel--;
     run.cells[target] = run.solution[target];
     const units = UNITS.flatMap((unit, id) => unit.includes(target) && unit.every(i => run.cells[i] !== 0) ? [id] : []);
-    path.push({ cell: target, value: run.cells[target], ordinal: path.length + 1, source: kind, units, mark: run.marks[target], ...(hop ? { hop: true } : {}) });
-    // Stroke doubles contributions belonging to its first 3/5 newly filled cells,
-    // rather than multiplying an entire short cast or punishing a longer chain.
+    path.push({ sheet: run.sheet, cell: target, value: run.cells[target], ordinal: path.length + 1, source: kind, units, mark: run.marks[target], ...(hop ? { hop: true } : {}), ...(sheetStart ? { sheetStart: true } : {}) });
+    // Per-cell base progression softens at 80 after cell 36; the chain and every
+    // later contribution continue. There is no arbitrary chain/sheet clamp.
     const stroke = has('stroke') && path.length <= (relicTier(run, 'stroke') === 2 ? 5 : 3) ? 2 : 1;
-    base += (10 + (path.length - 1) * 2) * stroke;
-    completion += units.length * (20 + (run.character === 'scribe' ? 10 : 0) + (has('pen') ? 20 : 0)) * stroke;
-    if (run.marks[target] === 'weak') weak += (has('lens') ? 20 : 8) * stroke;
+    const base = Math.min(80, 10 + (path.length - 1) * 2);
+    const completion = units.length * (20 + (run.character === 'scribe' ? 10 : 0) + (has('pen') ? 20 : 0)) * completionMultiplier;
+    const weak = run.marks[target] === 'weak' ? (has('lens') ? 20 : 8) : 0;
+    rawDamage += (base + completion + weak) * stroke;
     const addedAuto = has('rekindle') && units.length && !rekindled ? 3 : 0;
     if (addedAuto) { fuel += addedAuto; rekindled = true; }
-    chain.steps.push({ from, cell: target, source: kind,
+    chain.steps.push({ sheet: run.sheet, from, cell: target, source: kind,
       sharedUnits: from === null ? [] : UNITS.flatMap((unit, id) => unit.includes(from) && unit.includes(target) ? [id] : []),
       candidateValues, eligibleCells, tiedCells, initiallySingle: initiallySingle[target], remainingBefore, remainingAfter: fuel, addedAuto,
-      ...(hop ? { hop: true } : {}),
+      ...(hop ? { hop: true } : {}), ...(sheetStart ? { sheetStart: true } : {}),
     });
   };
   let current = cell;
-  const roots = run.cells.flatMap((value, target) => !value && (skill || initiallySingle[target]) ? [target] : []);
-  fill(current, 'root', null, roots);
+  fill(current, 'root', null, legalOrigins(source, skill));
   if (has('echo')) {
     const eligible = run.cells.flatMap((v, i) => !v && run.solution[i] === run.solution[cell] ? [i] : []).sort((a, b) => near(cell, a, b));
     if (eligible[0] !== undefined) { fill(eligible[0], 'echo', current, eligible); current = eligible[0]; }
   }
   while (fuel > 0) {
+    if (run.cells.every(Boolean)) {
+      if (!has('wick') || relicTier(run, 'wick') !== 2) break;
+      endSegment(); nextBoard(run, boardRandom); beginSegment();
+      const roots = run.cells.flatMap((value, target) => !value && initiallySingle[target] ? [target] : []);
+      // Stable ascending scan means equal lengths choose the upper-left cell.
+      let best = roots[0], length = -1;
+      for (const root of roots) { const measured = measureSheet(run, root, fuel, rekindled, hopped, skill); if (measured > length) { best = root; length = measured; } }
+      if (best === undefined) throw new Error('次のシートの確定起点が見つかりません。');
+      fill(best, 'chain', null, roots, false, true); current = best;
+      continue;
+    }
     let eligible = PEERS[current].filter(i => !run.cells[i] && candidates(run.cells, i).length === 1).sort((a, b) => near(current, a, b));
     let hop = false;
     if (!eligible.length && skill && run.character === 'fuse' && run.skillRank === 2 && !hopped) {
@@ -160,22 +201,16 @@ function planCast(source: Run, cell: number, skill: boolean): CastPlan {
     if (hop) hopped = true;
     fill(eligible[0], 'chain', current, eligible, hop); current = eligible[0];
   }
+  endSegment(); run.randomState = boardRandom.state;
   chain.remainingAuto = fuel;
-  const fullClear = run.cells.every(Boolean);
-  chain.stopReason = fullClear ? 'board-complete' : fuel === 0 ? 'limit' : 'no-target';
-  if (skill && run.character === 'scribe') completion *= run.skillRank === 2 ? 4 : 3;
-  let multiplier = spellMultiplier(run.spellLevel) * (has('glass') ? 1.25 : 1);
-  if (skill && has('amplifier')) multiplier *= 1.5;
-  if (skill && run.character === 'lumen') multiplier *= run.skillRank === 2 ? 2.5 : 2;
-  const baseDamage = Math.floor((base + completion + weak) * multiplier);
-  const initialBlanks = run.givens.filter(given => !given).length;
-  const clearRatio = fullClear && initialBlanks ? path.length / initialBlanks : 0;
-  // Multiply the integer numerator first: a rounded ratio such as 23/36 can
-  // otherwise turn an exact 1656 into 1655.9999999999998 before floor().
-  const clearBonus = fullClear && initialBlanks ? Math.floor(baseDamage * path.length / (4 * initialBlanks)) : 0;
-  const oneCastClear = fullClear && path.length === initialBlanks && source.cells.every((value, i) => source.givens[i] || value === 0);
+  chain.stopReason = run.cells.every(Boolean) ? 'board-complete' : fuel === 0 ? 'limit' : 'no-target';
+  const baseDamage = segments.reduce((sum, part) => sum + part.baseDamage, 0), clearBonus = segments.reduce((sum, part) => sum + part.clearBonus, 0);
+  const sheetsCompleted = segments.filter(part => part.fullClear).length;
   const oldMana = run.mana, stored = run.manaOverflow;
-  if (skill) { run.mana = stored; run.manaOverflow = 0; }
+  const freeSkill = skill && (run.freeSkillTokens ?? 0) > 0;
+  // Free tokens take priority even at full mana, preserving stored mana/overflow.
+  if (freeSkill) run.freeSkillTokens--;
+  else if (skill) { run.mana = stored; run.manaOverflow = 0; }
   else {
     const gained = path.length + (run.character === 'lumen' ? 1 : 0) + (has('battery') ? 2 : 0);
     run.mana = Math.min(8, oldMana + gained);
@@ -183,60 +218,96 @@ function planCast(source: Run, cell: number, skill: boolean): CastPlan {
   }
   if (skill && has('afterglow')) run.afterglow = true;
   const report: Report = {
-    skill, path, chain, damage: baseDamage + clearBonus, baseDamage, guaranteedDamage: baseDamage + clearBonus,
-    clearBonus, clearRatio, oneCastClear, attackScore: 0, shield: sheetShield(run), incoming: incomingAttack(source), received: 0, healed: 0,
-    charge: skill ? 0 : run.mana - oldMana, manaOverflow: run.manaOverflow, manaRestored: skill ? stored : 0,
+    skill, freeSkill, path, chain, segments, sheetsCompleted,
+    damage: baseDamage + clearBonus, baseDamage, guaranteedDamage: baseDamage + clearBonus,
+    clearBonus, clearRatio: Math.max(...segments.map(part => part.clearRatio)), oneCastClear: segments.some(part => part.oneCastClear),
+    attackScore: 0, shield: maxShield, incoming: incomingAttack(source), received: 0, healed: 0,
+    charge: skill ? 0 : run.mana - oldMana, manaOverflow: run.manaOverflow, manaRestored: skill && !freeSkill ? stored : 0,
     units: path.reduce((n, event) => n + event.units.length, 0), weak: path.filter(event => event.mark === 'weak').length,
-    defeated: false, fullClear, sweep: [], hpBefore: source.hp, enemyBefore: source.enemyHp,
+    defeated: false, fullClear: sheetsCompleted > 0, sweep: [], hpBefore: source.hp, enemyBefore: source.enemyHp,
     sheetAdvanced: false, levelsGained: 0, spellLevelBefore: source.spellLevel, spellLevelAfter: source.spellLevel, maxHpGained: 0,
   };
-  const eligible = has('trinity') && path.some(event => event.value === 3);
-  return { run, report, chance: eligible ? [0.3, 0.45, 0.6][relicRank(run, 'trinity') - 1] : 0, procMultiplier: relicTier(run, 'trinity') === 2 ? 2 : 1.5 };
+  const effects: PrimeEffect[] = [];
+  for (const id of Object.keys(primeDigits) as PrimeRelicId[]) {
+    if (!has(id) || !path.some(event => event.value === primeDigits[id])) continue;
+    if (id === 'quint' && (freeSkill || (source.freeSkillTokens ?? 0) > 0)) continue;
+    const upper = relicTier(run, id) === 2;
+    const value = id === 'trinity' ? (upper ? 2 : 1.5) : id === 'duality' ? (upper ? .5 : .25) : id === 'quint' ? (upper ? 2 : 1) : (upper ? 14 : 7);
+    effects.push({ id, chance: [.3, .45, .6][relicRank(run, id) - 1], value });
+  }
+  return { run, report, effects };
 }
-/** Isolated, versioned per-cast/effect domain: previews never call this function. */
-function trinityRoll(seed: number, castCounter: number): number {
-  let value = (seed ^ 0x74726933 ^ Math.imul(castCounter + 1, 0x9e3779b1)) >>> 0;
+/** Isolated versioned per-cast/effect domains. Previews never call this. The
+ * Trinity domain is retained to preserve existing casts after save migration. */
+export function primeRoll(seed: number, castCounter: number, id: PrimeRelicId): number {
+  const domains: Record<PrimeRelicId, number> = { duality: 0x64756132, trinity: 0x74726933, quint: 0x71756935, sept: 0x73657037 };
+  let value = (seed ^ domains[id] ^ Math.imul(castCounter + 1, 0x9e3779b1)) >>> 0;
   value = Math.imul(value ^ value >>> 16, 0x7feb352d);
   value = Math.imul(value ^ value >>> 15, 0x846ca68b);
   return ((value ^ value >>> 16) >>> 0) / 0x100000000;
 }
-/** Settle without RNG. Used for both bounds and the one committed outcome. */
-function settleCast(plan: CastPlan, damage: number): Run {
+/** Settle once against the current enemy; never attack/skip its successor. */
+function settleCast(plan: CastPlan, triggered: ReadonlySet<PrimeRelicId>): Run {
   const run = structuredClone(plan.run), report = structuredClone(plan.report);
-  report.damage = damage; report.defeated = damage >= run.enemyHp;
-  report.received = report.defeated ? 0 : Math.max(0, report.incoming - report.shield);
-  report.attackScore = Math.floor(damage * (run.inventory.includes('gold') ? 1.5 : 1));
-  run.enemyHp = Math.max(0, run.enemyHp - damage); run.hp = Math.max(0, run.hp - report.received); run.score += report.attackScore;
+  const effect = (id: PrimeRelicId) => triggered.has(id) ? plan.effects.find(p => p.id === id)?.value ?? 0 : 0;
+  report.damage = Math.floor(report.baseDamage! * (effect('trinity') || 1)) + report.clearBonus!;
+  report.defeated = report.damage >= run.enemyHp;
+  const reduction = Math.min(.6, (run.boons?.defense ? .25 : 0) + effect('duality'));
+  report.received = report.defeated ? 0 : Math.ceil(Math.max(0, report.incoming - report.shield) * (1 - reduction));
+  report.attackScore = Math.floor(report.damage * (run.inventory.includes('gold') ? 1.5 : 1));
+  run.enemyHp = Math.max(0, run.enemyHp - report.damage); run.hp = Math.max(0, run.hp - report.received); run.score += report.attackScore;
+  if (effect('quint')) run.freeSkillTokens = effect('quint');
+  if (effect('sept')) run.reservedAuto = effect('sept');
   run.turn++; run.castCounter++; run.stats.moves++; run.stats.filled += report.path.length;
   run.stats.bestChain = Math.max(run.stats.bestChain, report.path.length);
   if (report.skill) run.stats.skills++;
-  if (report.fullClear) run.stats.sheets++;
+  run.stats.sheets += report.sheetsCompleted ?? 0;
   if (report.defeated) {
     run.stats.kills++; run.score += 500;
     report.sweep = run.cells.flatMap((v, i) => v ? [] : [i]); run.cells = [...run.solution];
-    grow(run, report, report.fullClear ? 2 : 1); run.phase = 'reward';
+    grow(run, report, (report.sheetsCompleted ?? 0) + 1); run.phase = 'reward';
   } else if (!run.hp) run.phase = 'lost';
-  else if (report.fullClear) { grow(run, report, 1); report.sheetAdvanced = true; }
+  else if (report.fullClear) { grow(run, report, report.sheetsCompleted!); report.sheetAdvanced = true; }
   run.lastReport = report;
   return run;
 }
 export function previewAction(run: Run, cell: number, skill = false): Preview {
-  const plan = planCast(run, cell, skill), minimum = settleCast(plan, plan.report.guaranteedDamage!);
+  const plan = planCast(run, cell, skill), minimum = settleCast(plan, new Set());
   const report: Preview = minimum.lastReport!;
-  if (plan.chance) {
-    const maximum = settleCast(plan, Math.floor(plan.report.baseDamage! * plan.procMultiplier) + plan.report.clearBonus!);
-    const best = maximum.lastReport!;
+  if (plan.effects.length) {
+    // The independent damage/reduction effects create four possible combat
+    // outcomes. Future token/fuel outcomes don't change this cast's path or HP.
+    const ids = plan.effects.filter(p => p.id === 'trinity' || p.id === 'duality').map(p => p.id);
+    const states: Run[] = [];
+    for (let mask = 0; mask < 2 ** ids.length; mask++) states.push(settleCast(plan, new Set(ids.filter((_, i) => mask & (1 << i)))));
+    const reports = states.map(state => state.lastReport!);
+    const trinity = plan.effects.find(effect => effect.id === 'trinity');
     report.forecast = {
-      damageMax: best.damage, attackScoreMax: best.attackScore, chance: plan.chance, multiplier: plan.procMultiplier,
-      receivedMin: Math.min(report.received, best.received), receivedMax: Math.max(report.received, best.received),
-      healedMin: Math.min(report.healed, best.healed), healedMax: Math.max(report.healed, best.healed),
-      levelsGainedMin: Math.min(report.levelsGained!, best.levelsGained!), levelsGainedMax: Math.max(report.levelsGained!, best.levelsGained!),
-      kill: report.defeated ? 'guaranteed' : best.defeated ? 'possible' : 'none',
-      survival: minimum.hp > 0 ? 'certain' : maximum.hp > 0 ? 'possible' : 'none',
-      sheetAdvancedCertain: !!report.sheetAdvanced && !!best.sheetAdvanced,
+      procs: plan.effects, damageMax: Math.max(...reports.map(p => p.damage)), attackScoreMax: Math.max(...reports.map(p => p.attackScore)), chance: trinity?.chance ?? 0, multiplier: trinity?.value ?? 1,
+      receivedMin: Math.min(...reports.map(p => p.received)), receivedMax: Math.max(...reports.map(p => p.received)),
+      healedMin: Math.min(...reports.map(p => p.healed)), healedMax: Math.max(...reports.map(p => p.healed)),
+      levelsGainedMin: Math.min(...reports.map(p => p.levelsGained!)), levelsGainedMax: Math.max(...reports.map(p => p.levelsGained!)),
+      kill: reports.every(p => p.defeated) ? 'guaranteed' : reports.some(p => p.defeated) ? 'possible' : 'none',
+      survival: states.every(state => state.hp > 0) ? 'certain' : states.some(state => state.hp > 0) ? 'possible' : 'none',
+      sheetAdvancedCertain: reports.every(p => !!p.sheetAdvanced),
     };
   }
   return report;
+}
+const longestCache = new Map<string, { cells: number[]; length: number }>();
+/** Cache only path-relevant state, independent of selection/render. Bounded by
+ * entries, not chain length. A fresh revision/resource/mode/board invalidates. */
+export function longestOrigins(run: Run, skill = false): { cells: number[]; length: number } {
+  const key = JSON.stringify([run.id, run.revision, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill]);
+  const cached = longestCache.get(key); if (cached) return { cells: [...cached.cells], length: cached.length };
+  const result = { cells: [] as number[], length: 0 };
+  for (const cell of legalOrigins(run, skill)) {
+    const length = planCast(run, cell, skill).report.path.length;
+    if (length > result.length) { result.cells = [cell]; result.length = length; }
+    else if (length === result.length) result.cells.push(cell);
+  }
+  if (longestCache.size >= 8) longestCache.delete(longestCache.keys().next().value!);
+  longestCache.set(key, result); return { cells: [...result.cells], length: result.length };
 }
 /** One committed reducer; the state is persisted before any animation. */
 export function resolveAction(source: Run, action: Action): Run {
@@ -245,7 +316,10 @@ export function resolveAction(source: Run, action: Action): Run {
   const random = new Random(run.randomState);
   if (action.type === 'reward') {
     if (run.phase !== 'reward' || !run.rewards.includes(action.relic) || !canTakeReward(run, action.relic)) throw new Error('この報酬は選べません。');
-    if (action.relic === 'training') { run.spellLevel++; run.maxHp += 4; run.hp = Math.min(run.maxHp, run.hp + 10); }
+    run.boons = { defense: Math.max(0, (run.boons?.defense ?? 0) - 1), magic: Math.max(0, (run.boons?.magic ?? 0) - 1) };
+    if (action.relic === 'defense-boon') run.boons.defense = 5;
+    else if (action.relic === 'magic-boon') run.boons.magic = 5;
+    else if (action.relic === 'training') { run.spellLevel++; run.maxHp += 4; run.hp = Math.min(run.maxHp, run.hp + 10); }
     else if (action.relic === 'vitality') { run.maxHp += 12; run.hp = Math.min(run.maxHp, run.hp + 12); }
     else if (action.relic === 'recovery') run.hp = run.maxHp;
     else if (action.relic === 'skill-upgrade') run.skillRank = 2;
@@ -262,18 +336,18 @@ export function resolveAction(source: Run, action: Action): Run {
     }
     run.stage++; run.balanceVersion = 2; nextBoard(run, random); run.encounterSheet = 1;
     run.enemyHp = enemyOf(run.stage, run.balanceVersion).hp;
+    if (run.boons.magic) run.mana = 8;
     run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null;
   } else {
     const plan = planCast(source, action.cell, action.skill);
-    let damage = plan.report.guaranteedDamage!;
-    if (plan.chance) {
-      const triggered = trinityRoll(source.seed, source.castCounter) < plan.chance;
-      if (triggered) damage = Math.floor(plan.report.baseDamage! * plan.procMultiplier) + plan.report.clearBonus!;
-      plan.report.proc = { id: 'trinity', chance: plan.chance, multiplier: plan.procMultiplier, triggered };
-    }
-    run = settleCast(plan, damage);
+    const procs: PrimeProcOutcome[] = plan.effects.map(effect => ({ ...effect, triggered: primeRoll(source.seed, source.castCounter, effect.id) < effect.chance }));
+    if (procs.length) plan.report.procs = procs;
+    const trinity = procs.find(proc => proc.id === 'trinity');
+    if (trinity) plan.report.proc = { id: 'trinity', chance: trinity.chance, multiplier: trinity.value, triggered: trinity.triggered };
+    run = settleCast(plan, new Set(procs.filter(proc => proc.triggered).map(proc => proc.id)));
+    random.state = run.randomState;
     if (run.lastReport!.defeated) run.rewards = rollRewards(run, random);
-    else if (run.lastReport!.sheetAdvanced) nextBoard(run, random);
+    else if (run.phase === 'battle' && run.cells.every(Boolean)) nextBoard(run, random);
   }
   run.randomState = random.state; run.revision++;
   return run;

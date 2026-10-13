@@ -1,15 +1,19 @@
 export type CharacterId = 'fuse' | 'scribe' | 'lumen';
-export type RelicId = 'wick' | 'echo' | 'rekindle' | 'pen' | 'ward' | 'stroke' | 'battery' | 'amplifier' | 'afterglow' | 'lens' | 'glass' | 'gold' | 'trinity';
-export type RepeatableRewardId = 'training' | 'vitality' | 'recovery';
-export type GreaterRelicId = 'stroke' | 'trinity';
+export type RelicId = 'wick' | 'echo' | 'rekindle' | 'pen' | 'ward' | 'stroke' | 'battery' | 'amplifier' | 'afterglow' | 'lens' | 'glass' | 'gold' | 'trinity' | 'duality' | 'quint' | 'sept';
+export type PrimeRelicId = 'duality' | 'trinity' | 'quint' | 'sept';
+export type RepeatableRewardId = 'training' | 'vitality' | 'recovery' | 'magic-boon' | 'defense-boon';
+export type GreaterRelicId = 'stroke' | PrimeRelicId | 'lens' | 'wick';
 export type RewardId = RelicId | RepeatableRewardId | 'skill-upgrade' | `greater:${GreaterRelicId}`;
 export type Mark = 'weak' | 'shield' | null;
 export type Phase = 'battle' | 'reward' | 'won' | 'lost';
 export interface FillEvent {
+  /** Global sheet identity; absent only in legacy single-sheet reports. */
+  sheet?: number; sheetStart?: boolean;
   cell: number; value: number; ordinal: number; source: 'root' | 'echo' | 'chain';
   units: number[]; mark: Mark; hop?: boolean;
 }
 export interface ChainStep {
+  sheet?: number; sheetStart?: boolean;
   from: number | null; cell: number; source: FillEvent['source']; sharedUnits: number[];
   candidateValues: number[]; eligibleCells: number[]; tiedCells: number[]; initiallySingle: boolean;
   remainingBefore: number; remainingAfter: number; addedAuto: number; hop?: boolean;
@@ -19,7 +23,16 @@ export interface ChainTrace {
   stopReason: 'limit' | 'no-target' | 'board-complete'; remainingAuto: number;
 }
 export interface ProcOutcome { id: 'trinity'; chance: number; multiplier: number; triggered: boolean }
+export interface PrimeEffect { id: PrimeRelicId; chance: number; value: number }
+export interface PrimeProcOutcome extends PrimeEffect { triggered: boolean }
+export interface SheetSegment {
+  /** State before this segment; pathEnd is exclusive. */
+  sheet: number; cells: number[]; solution: number[]; givens: boolean[]; marks: Mark[];
+  pathStart: number; pathEnd: number; baseDamage: number; clearBonus: number; clearRatio: number;
+  fullClear: boolean; oneCastClear: boolean;
+}
 export interface Forecast {
+  procs?: PrimeEffect[];
   damageMax: number; attackScoreMax: number; chance: number; multiplier: number;
   receivedMin: number; receivedMax: number; healedMin: number; healedMax: number;
   levelsGainedMin: number; levelsGainedMax: number;
@@ -27,6 +40,7 @@ export interface Forecast {
   sheetAdvancedCertain: boolean;
 }
 export interface Report {
+  segments?: SheetSegment[]; sheetsCompleted?: number; freeSkill?: boolean; procs?: PrimeProcOutcome[];
   skill: boolean; path: FillEvent[]; damage: number; attackScore: number;
   shield: number; incoming: number; received: number; healed: number; charge: number;
   units: number; weak: number; defeated: boolean; fullClear: boolean; sweep: number[];
@@ -38,7 +52,7 @@ export interface Report {
   baseDamage?: number; guaranteedDamage?: number; clearBonus?: number; clearRatio?: number; oneCastClear?: boolean;
   manaOverflow?: number; manaRestored?: number; proc?: ProcOutcome;
 }
-/** Forecasts do not draw randomness, advance boards, or choose rewards. */
+/** Forecasts clone board RNG when needed; they never consume source state, roll procs, or choose rewards. */
 export interface Preview extends Report { forecast?: Forecast }
 export interface Run {
   id: string; seed: number; randomState: number; revision: number;
@@ -46,6 +60,7 @@ export interface Run {
   character: CharacterId; skillRank: 1 | 2; stage: number; turn: number; phase: Phase;
   cells: number[]; solution: number[]; givens: boolean[]; marks: Mark[];
   puzzleOrder: number[]; puzzleCursor: number; sheet: number; encounterSheet: number; spellLevel: number;
+  freeSkillTokens: number; reservedAuto: number; boons: { defense: number; magic: number };
   hp: number; maxHp: number; mana: number; manaOverflow: number; enemyHp: number;
   score: number; inventory: RelicId[]; pool: RelicId[]; rewards: RewardId[]; afterglow: boolean;
   acquisitionRank: Partial<Record<RelicId, number>>; tier: Partial<Record<RelicId, number>>;

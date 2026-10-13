@@ -173,3 +173,34 @@
 }
 @media(max-width:370px){.prediction-numbers strong{font-size:clamp(9px,calc(140px / var(--number-length,3)),21px)}}
 @media(max-width:760px){.prediction-card{padding-top:7px;padding-bottom:5px}.prediction-footer{margin-top:3px}}
+
+/* Origin cues stay visible above a dense path and do not rely on color. */
+.cell-input{position:relative}.origin-mark{position:absolute;top:3px;left:5px;font:12px/1.1 Georgia,serif;color:#bbded0;text-shadow:0 1px 2px #081a21;pointer-events:none}
+.cell-input[data-root=selected] .origin-mark{color:#ffe4a4}.cell-input[data-longest=true] .origin-mark{color:#e4d5ff;font-size:13px}
+.root-legend i{font-style:normal;color:#b9ddcf;font-size:12px}.selected-legend{color:#e9ca87}.path-legend{color:#b7a587}
+.longest-origins{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:3px 6px;margin:7px 0 2px;font-size:10px;color:#c4b7dd;line-height:1.6}
+.longest-origins>span{color:#ddc8ff}.longest-origins b{color:#efe1ff;font-weight:500}.longest-origins small{font-size:8px;color:#99a4bd}
+.spell-resources{display:flex;flex-wrap:wrap;gap:5px 8px;margin:12px 0 0;padding:8px;background:#211f3480;border:1px solid #6c59864d;border-radius:4px;font-size:9px;color:#baa9d2;line-height:1.7}
+.spell-resources>span{display:flex;gap:5px;flex-wrap:wrap}.spell-resources b{font-weight:500;color:#e5cfff}.spell-resources small{font-size:8px;color:#aea4be}
+.chance-forecast>span{display:block}.chance-forecast>span>small{display:block;margin-top:0;color:#b5adbf}.sheet-forecast{font-size:9px;color:#cbb7e3;text-align:center;line-height:1.6;margin-top:6px}
+.animation-skip{display:block;margin:8px auto;padding:8px 16px;background:#293449;border:1px solid #516078;border-radius:4px;font-size:11px;color:#d8deeb}.animation-skip:focus-visible{outline:2px solid #e6cd92}
+@media(max-width:760px){.origin-mark{top:2px;left:3px;font-size:9px}.cell-input[data-longest=true] .origin-mark{font-size:10px}.board-legend{column-gap:9px;font-size:8px}.root-legend{white-space:normal!important}.longest-origins{margin-top:4px;font-size:9px;gap:1px 5px}.longest-origins small{width:100%;text-align:center;font-size:7px}.spell-resources{grid-column:1/-1;grid-row:2;margin:0;padding:5px 7px;font-size:8px}.command-panel:has(.spell-resources) .prediction-card{grid-row:3}.command-panel:has(.spell-resources) .skill-button,.command-panel:has(.spell-resources) .cast-button{grid-row:4}.command-panel:has(.spell-resources) .skill-description{grid-row:5}.spell-resources small{font-size:7px}.animation-skip{grid-column:1/-1;margin:2px auto;padding:7px 12px}.sheet-forecast{font-size:8px;margin-top:4px}}
+
+.sweep-summary{font-size:10px;line-height:1.8;color:#a9a4bc;text-align:center;margin:-8px 0 17px}
+
+/* Keep the first mobile cast in view without shrinking the board or risk text.
+   Resource details sit immediately after the primary controls; token priority
+   remains visible in the skill button and selected-action prediction. */
+@media(max-width:760px){
+  body:has(.game-layout) .site-header{height:56px}
+  .enemy-card{padding-bottom:7px}.game-layout{gap:6px}
+  .tutorial{padding-top:5px;padding-bottom:5px;margin-bottom:6px}
+  .board-legend{row-gap:2px}.command-panel{row-gap:4px}
+  .longest-origins{margin-top:3px;gap:1px 4px}
+  .longest-origins>span{font-size:0}.longest-origins>span::before{content:'★';font-size:9px}
+  .longest-origins small{width:auto;font-size:7px}
+  .spell-resources{grid-row:5}
+  .command-panel:has(.spell-resources) .prediction-card{grid-row:2}
+  .command-panel:has(.spell-resources) .skill-button,.command-panel:has(.spell-resources) .cast-button{grid-row:3}
+  .command-panel:has(.spell-resources) .skill-description{grid-row:4}
+}

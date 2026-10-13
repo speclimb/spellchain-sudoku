@@ -125,7 +125,7 @@ test('mobile: readable board, touch targets, settings, codex and persistent sele
   const cast = await page.locator('[data-action="cast"]').boundingBox();
   expect(cast!.y + cast!.height).toBeLessThanOrEqual(844);
   await page.getByRole('button', { name: '遺物図鑑' }).click();
-  await expect(page.locator('.codex-item')).toHaveCount(13);
+  await expect(page.locator('.codex-item')).toHaveCount(16);
   await page.getByRole('button', { name: '閉じる', exact: true }).click();
   await page.getByRole('button', { name: '設定', exact: true }).click();
   await page.getByLabel('演出を短く').check();

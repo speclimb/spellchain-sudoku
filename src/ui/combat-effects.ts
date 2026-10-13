@@ -22,6 +22,7 @@ export class CombatEffects {
   private cutinCount = 0;
   private cutinBudget = 0;
   private destroyed = false;
+  private skipped = false;
   constructor(settings: Settings, private audio: IncantationAudio) {
     this.settings = { ...settings };
     this.host.className = 'combat-effects';
@@ -55,7 +56,7 @@ export class CombatEffects {
     this.host.classList.add('fx-pulse');
   }
   fill(event: FillEvent): void {
-    if (this.destroyed) return;
+    if (this.destroyed || this.skipped) return;
     this.position();
     this.host.dataset.intensity = event.ordinal >= 8 ? 'high' : event.ordinal >= 4 ? 'medium' : 'low';
     this.text('.combat-chain strong', String(event.ordinal));
@@ -111,20 +112,37 @@ export class CombatEffects {
   private duration(normal: number): number {
     return this.settings.reducedMotion ? 140 : this.settings.fast ? 100 : normal;
   }
+  skip(): void {
+    this.skipped = true;
+    this.clearCutin();
+    this.host.style.display = 'none';
+  }
+  async sheetComplete(segment: NonNullable<Report['segments']>[number], continues: boolean): Promise<void> {
+    if (this.skipped) return;
+    this.clearCutin();
+    this.position();
+    this.host.dataset.sheet = String(segment.sheet);
+    this.host.dataset.oneCast = String(segment.oneCastClear);
+    this.phase(segment.oneCastClear ? 'one-cast' : 'sheet', segment.oneCastClear ? '一詠全成！' : 'シート完成！', `シート ${segment.sheet} · ${segment.pathEnd - segment.pathStart}マス`, `完成加算 ＋${fmt(segment.clearBonus)}${continues ? ' · 余った回数で次のシートへ' : ''}`);
+    if (this.settings.sound) { if (segment.oneCastClear) this.audio.oneCastClear(); else this.audio.sheetClear(); }
+    await pause(this.duration(segment.oneCastClear ? 420 : 220));
+  }
   async finish(before: Run, after: Run, report: Report): Promise<void> {
+    if (this.skipped) return;
     // Reduced-motion fills happen in one frame. Let their final static completion
     // banner be painted once before switching to the strike result.
     if (this.settings.reducedMotion && this.cutin) await pause(180);
     this.clearCutin();
     const enemy = enemyOf(before.stage, before.balanceVersion);
-    if (report.oneCastClear) {
+    if (report.oneCastClear && !report.segments?.length) {
       this.position();
       this.phase('one-cast', '一詠全成！', `${report.path.length}マスを、一度の詠唱で。`, `基礎攻撃 ${fmt(report.baseDamage ?? report.damage)} · 完成加算 ＋${fmt(report.clearBonus ?? 0)}`);
       if (this.settings.sound) this.audio.oneCastClear();
       await pause(this.duration(620));
     }
+    if (this.skipped) return;
     this.position('enemy');
-    const detail = [report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : ''].filter(Boolean).join(' · ');
+    const detail = [report.procs?.length ? report.procs.map(proc => `${({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[proc.id]} ${proc.triggered ? '発動' : '不発'}`).join(' · ') : report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : ''].filter(Boolean).join(' · ');
     this.phase('strike', report.defeated ? '撃破！' : report.proc?.triggered ? '三の護符 発動！' : report.skill ? '奥義炸裂！' : '連鎖炸裂！', fmt(report.damage), detail);
     this.text('.combat-score', `SCORE +${fmt(report.attackScore)}`);
     const enemyHp = Math.max(0, before.enemyHp - report.damage);
@@ -139,6 +157,7 @@ export class CombatEffects {
     await pause(this.duration(380));
     document.querySelector('.enemy-card')?.classList.remove('enemy-struck');
 
+    if (this.skipped) return;
     if (!report.defeated) {
       this.position();
       const ward = document.querySelector('.sheet-ward b');
@@ -159,12 +178,14 @@ export class CombatEffects {
       await pause(this.duration(360));
       document.querySelector('.app-shell')?.classList.remove('player-struck', 'player-blocked');
     }
-    if (report.sheetAdvanced) {
+    if (this.skipped) return;
+    if (report.sheetAdvanced && (!report.segments?.length || report.segments.at(-1)?.fullClear)) {
       this.position();
       this.phase('sheet', 'シート完成！', `次のシート ${after.encounterSheet}`, `同じ敵との戦いは続く · 残りHP ${fmt(after.enemyHp)}`);
       if (this.settings.sound && !report.oneCastClear) this.audio.sheetClear();
       await pause(this.duration(320));
     }
+    if (this.skipped) return;
     if ((report.levelsGained ?? 0) > 0) {
       const chainGained = chainBonus(after.spellLevel) - chainBonus(report.spellLevelBefore ?? before.spellLevel);
       this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 自動連鎖 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 回復 +${report.healed}`);
