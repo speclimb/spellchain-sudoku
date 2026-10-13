@@ -21,12 +21,12 @@ export const RELICS: Relic[] = [
   { id: 'gold', name: '黄金のインク', symbol: '✧', kind: '得点', description: '攻撃から得るスコアを1.5倍。ダメージは変化しない。', unlock: 0 },
 ];
 export const ENEMIES = [
-  { name: '迷い火の精', title: 'THE WANDERING EMBER', hp: 180, attack: 3, symbol: 'ember', lore: '古い魔法陣に、小さな灯りがともる。' },
-  { name: '書架の使い魔', title: 'THE ARCHIVE FAMILIAR', hp: 250, attack: 3, symbol: 'wing', lore: '眠っていた数字が、羽音に目を覚ます。' },
-  { name: '紋章の番人', title: 'THE SIGIL KEEPER', hp: 340, attack: 4, symbol: 'guardian', lore: '三度目の詠唱に、番人は力を解き放つ。' },
-  { name: '夜を読む眼', title: 'THE MIDNIGHT ORACLE', hp: 440, attack: 4, symbol: 'eye', lore: 'その瞳は、まだ描かれていない連鎖を見ている。' },
-  { name: '星喰いの影', title: 'THE STAR DEVOURER', hp: 570, attack: 5, symbol: 'star', lore: '集めた遺物が、闇の中で共鳴しはじめる。' },
-  { name: '零の古竜', title: 'THE DRAGON OF ZERO', hp: 800, attack: 6, symbol: 'dragon', lore: '最後の魔法陣。あなたの詠唱を、夜空に刻め。' },
+  { name: '迷い火の精', title: 'THE WANDERING EMBER', hp: 1400, attack: 3, symbol: 'ember', lore: '一枚の魔法陣では消えない灯り。詠唱をつないで育てよう。' },
+  { name: '書架の使い魔', title: 'THE ARCHIVE FAMILIAR', hp: 2200, attack: 3, symbol: 'wing', lore: '眠っていた数字が、羽音に目を覚ます。' },
+  { name: '紋章の番人', title: 'THE SIGIL KEEPER', hp: 3200, attack: 4, symbol: 'guardian', lore: '三度目の詠唱に、番人は力を解き放つ。' },
+  { name: '夜を読む眼', title: 'THE MIDNIGHT ORACLE', hp: 4600, attack: 4, symbol: 'eye', lore: 'その瞳は、まだ描かれていない連鎖を見ている。' },
+  { name: '星喰いの影', title: 'THE STAR DEVOURER', hp: 6500, attack: 5, symbol: 'star', lore: '集めた遺物と育った詠唱が、闇の中で共鳴する。' },
+  { name: '零の古竜', title: 'THE DRAGON OF ZERO', hp: 9000, attack: 6, symbol: 'dragon', lore: '幾重もの魔法陣を越えて、あなたの詠唱を夜空に刻め。' },
 ];
 export const characterOf = (id: CharacterId) => CHARACTERS.find(c => c.id === id)!;
 export const relicOf = (id: RelicId) => RELICS.find(r => r.id === id)!;

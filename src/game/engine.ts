@@ -7,7 +7,7 @@ export function newSave(): Save {
   return { version: 1, meta: { clears: 0, runs: 0, wins: 0, bestScore: 0, tutorialDone: false }, run: null, settings: { sound: false, fast: false, reducedMotion: false } };
 }
 function prepareBoard(run: Run, random: Random): void {
-  const source = bank[run.puzzleOrder[run.stage]];
+  const source = bank[run.puzzleOrder[run.puzzleCursor]];
   const rows = random.shuffle([0, 1, 2]).flatMap(b => random.shuffle([0, 1, 2]).map(r => b * 3 + r));
   const cols = random.shuffle([0, 1, 2]).flatMap(b => random.shuffle([0, 1, 2]).map(c => b * 3 + c));
   const digits = [0, ...random.shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9])];
@@ -19,8 +19,26 @@ function prepareBoard(run: Run, random: Random): void {
   run.marks = Array<Mark>(81).fill(null);
   const marked = random.shuffle(run.cells.flatMap((n, i) => n ? [] : [i])).slice(0, 6);
   marked.forEach((i, j) => { run.marks[i] = j < 3 ? 'weak' : 'shield'; });
-  run.enemyHp = ENEMIES[run.stage].hp;
-  run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null;
+}
+/** Each deck contains every source once. Preserve the stream in the run for reloads/previews. */
+function nextBoard(run: Run, random: Random): void {
+  const previous = run.puzzleOrder[run.puzzleCursor];
+  run.puzzleCursor++;
+  if (run.puzzleCursor === bank.length) {
+    run.puzzleOrder = random.shuffle(bank.map((_, i) => i));
+    if (run.puzzleOrder[0] === previous) [run.puzzleOrder[0], run.puzzleOrder[1]] = [run.puzzleOrder[1], run.puzzleOrder[0]];
+    run.puzzleCursor = 0;
+  }
+  run.sheet++; run.encounterSheet++;
+  prepareBoard(run, random);
+}
+export const spellMultiplier = (level: number): number => 1 + (level - 1) * 0.2;
+function grow(run: Run, report: Report, levels: number): void {
+  const before = run.hp;
+  run.spellLevel += levels; run.maxHp += levels * 4;
+  run.hp = Math.min(run.maxHp, run.hp + levels * 10);
+  report.healed += run.hp - before;
+  report.levelsGained = levels; report.spellLevelAfter = run.spellLevel; report.maxHpGained = levels * 4;
 }
 export function startRun(save: Save, character: CharacterId, seed: number): Save {
   const chosen = CHARACTERS.find(c => c.id === character);
@@ -30,12 +48,12 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
   const run: Run = {
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0,
     character, stage: 0, turn: 0, phase: 'battle', cells: [], solution: [], givens: [], marks: [],
-    puzzleOrder: random.shuffle(bank.map((_, i) => i)).slice(0, 6),
+    puzzleOrder: random.shuffle(bank.map((_, i) => i)), puzzleCursor: 0, sheet: 1, encounterSheet: 1, spellLevel: 1,
     hp: 40, maxHp: 40, mana: 0, enemyHp: 0, score: 0, inventory: [],
     pool: RELICS.filter(r => r.unlock <= save.meta.clears).map(r => r.id), rewards: [], afterglow: false,
-    stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0 }, lastReport: null,
+    stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0, sheets: 0 }, lastReport: null,
   };
-  prepareBoard(run, random); run.randomState = random.state;
+  prepareBoard(run, random); run.enemyHp = ENEMIES[0].hp; run.randomState = random.state;
   next.run = run; next.meta.runs++;
   return next;
 }
@@ -57,7 +75,9 @@ export function resolveAction(source: Run, action: Action): Run {
     if (run.phase !== 'reward' || !run.rewards.includes(action.relic) || run.inventory.includes(action.relic)) throw new Error('この遺物は選べません。');
     run.inventory.push(action.relic);
     if (action.relic === 'glass') { run.maxHp -= 8; run.hp = Math.min(run.hp, run.maxHp); }
-    run.stage++; prepareBoard(run, random);
+    run.stage++; nextBoard(run, random); run.encounterSheet = 1;
+    run.enemyHp = ENEMIES[run.stage].hp;
+    run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null;
   } else {
     if (run.phase !== 'battle' || !Number.isInteger(action.cell) || action.cell < 0 || action.cell >= 81 || run.cells[action.cell]) throw new Error('空きマスを選んでください。');
     if (action.skill ? run.mana < 8 : candidates(run.cells, action.cell).length !== 1) throw new Error(action.skill ? '魔力が足りません。' : '数字が確定したマスを選んでください。');
@@ -114,13 +134,13 @@ export function resolveAction(source: Run, action: Action): Run {
     chain.remainingAuto = fuel;
     chain.stopReason = run.cells.every(Boolean) ? 'board-complete' : fuel === 0 ? 'limit' : 'no-target';
     if (action.skill && run.character === 'scribe') completionDamage *= 3;
-    let multiplier = has('glass') ? 1.25 : 1;
+    let multiplier = spellMultiplier(run.spellLevel) * (has('glass') ? 1.25 : 1);
     if (has('stroke') && path.length <= 3) multiplier *= 2;
     if (action.skill && has('amplifier')) multiplier *= 1.5;
     if (action.skill && run.character === 'lumen') multiplier *= 2;
     const damage = Math.floor((baseDamage + completionDamage + weakDamage) * multiplier);
     const fullClear = run.cells.every(Boolean);
-    const defeated = damage >= run.enemyHp || fullClear;
+    const defeated = damage >= run.enemyHp;
     const incoming = incomingAttack(run);
     const received = defeated ? 0 : Math.max(0, incoming - shield);
     const attackScore = Math.floor(damage * (has('gold') ? 1.5 : 1));
@@ -132,6 +152,7 @@ export function resolveAction(source: Run, action: Action): Run {
       charge: action.skill ? 0 : run.mana - oldMana,
       units: path.reduce((n, event) => n + event.units.length, 0), weak: path.filter(e => e.mark === 'weak').length,
       defeated, fullClear, sweep: [], hpBefore: run.hp, enemyBefore: run.enemyHp,
+      sheetAdvanced: false, levelsGained: 0, spellLevelBefore: run.spellLevel, spellLevelAfter: run.spellLevel, maxHpGained: 0,
     };
     run.enemyHp = defeated ? 0 : Math.max(0, run.enemyHp - damage);
     run.hp = Math.max(0, run.hp - received);
@@ -139,17 +160,21 @@ export function resolveAction(source: Run, action: Action): Run {
     run.turn++; run.stats.moves++; run.stats.filled += path.length;
     run.stats.bestChain = Math.max(run.stats.bestChain, path.length);
     if (action.skill) run.stats.skills++;
+    if (fullClear) run.stats.sheets++;
     if (defeated) {
       run.stats.kills++; run.score += 500;
       report.sweep = run.cells.flatMap((v, i) => v ? [] : [i]);
       run.cells = [...run.solution];
+      grow(run, report, fullClear ? 2 : 1);
       if (run.stage === 5) {
         run.phase = 'won'; run.score += 1000 + run.hp * 10;
       } else {
-        const before = run.hp; run.hp = Math.min(run.maxHp, run.hp + 6); report.healed = run.hp - before;
         run.phase = 'reward'; run.rewards = rollRewards(run, random);
       }
     } else if (!run.hp) run.phase = 'lost';
+    else if (fullClear) {
+      grow(run, report, 1); nextBoard(run, random); report.sheetAdvanced = true;
+    }
     run.lastReport = report;
   }
   run.randomState = random.state;
