@@ -1,13 +1,15 @@
 import { col, row } from '../game/sudoku';
+import { chainCapacity } from '../game/engine';
 import type { Report, Run } from '../game/types';
 
 export const cellName = (cell: number): string => `${row(cell) + 1}行${col(cell) + 1}列`;
 const unitName = (unit: number): string => unit < 9 ? `同じ行（${unit + 1}行目）` : unit < 18 ? `同じ列（${unit - 8}列目）` : '同じ3×3区画';
 
 export function capacityText(run: Run, skill: boolean, report?: Report | null): string {
-  const count = report?.chain?.initialAuto ?? 3 + Number(run.character === 'fuse') + (run.inventory.includes('wick') ? 2 : 0) + (skill && run.character === 'fuse' ? 4 : 0) + (!skill && run.afterglow ? 2 : 0);
+  const count = report?.chain?.initialAuto ?? chainCapacity(run, skill);
   const extra = run.inventory.includes('echo') || run.inventory.includes('rekindle');
-  return `起点1マス ＋ 自動${count}回${extra ? '（遺物で追加あり）' : ` ＝ 最大${count + 1}連鎖`}`;
+  const maximum = Math.min(count + 1, run.cells.filter(value => !value).length);
+  return `起点1マス ＋ 自動${count}回${extra ? '（遺物で追加あり）' : ` ＝ 最大${maximum}連鎖`}`;
 }
 
 export function stopText(report: Report): string {
@@ -26,9 +28,9 @@ export function explainStep(report: Report, index: number): { title: string; det
   const step = trace.steps[index], event = report.path[index];
   if (!step || !event) return {
     title: stopText(report),
-    detail: trace.stopReason === 'no-target' ? '最後に埋めたマスと同じ行・列・3×3区画に、数字が1つに決まった空きマスがありません。他の場所に確定マスがあっても、ここからはつながりません。' : trace.stopReason === 'limit' ? '自動入力の回数を使い切りました。次につながるマスがあっても、この手はここまでです。起点を選び直すと、通るマスが変わります。' : '盤面を完成させたので、敵の残りHPに関係なく勝利します。',
+    detail: trace.stopReason === 'no-target' ? '最後に埋めたマスと同じ行・列・3×3区画に、数字が1つに決まった空きマスがありません。他の場所に確定マスがあっても、ここからはつながりません。' : trace.stopReason === 'limit' ? '自動入力の回数を使い切りました。次につながるマスがあっても、この手はここまでです。起点を選び直すと、通るマスが変わります。' : report.defeated ? '盤面を完成させ、この攻撃で敵のHPも0になります。シート完成と敵撃破の両方で成長します。' : report.sheetAdvanced ? '盤面は完成しますが、敵のHPは残ります。反撃を受けた後に成長し、同じ敵との次のシートへ進みます。' : '盤面は完成しますが、敵の反撃でHPが尽きるため、ここで冒険が終わります。',
     budget: `自動入力 残り${trace.remainingAuto}回 · 合計${report.path.length}連鎖`,
-    note: report.defeated ? `この${report.path.length}連鎖で勝利。${report.sweep.length ? `残り${report.sweep.length}マスの一掃は連鎖に数えず、得点・魔力も増えません。` : ''}` : `連鎖の後に${report.damage}ダメージで攻撃し、反撃でHPが${report.received}減ります。`,
+    note: report.defeated ? `この${report.path.length}連鎖で敵を撃破。${report.sweep.length ? `残り${report.sweep.length}マスの一掃は連鎖に数えず、得点・魔力も増えません。` : ''}` : `連鎖の後に${report.damage}ダメージで攻撃し、反撃でHPが${report.received}減ります。`,
   };
   const certainty = step.initiallySingle ? 'このマスは、起点を入れる前から数字が確定していました。' : 'このマスは、ここまでの入力で数字が1つに確定しました。';
   const nearest = step.tiedCells.length > 1 ? '同じ近さの候補があるので、上の行、次に左の列を優先します。' : step.eligibleCells.length > 1 ? 'つながる候補のうち、縦の距離＋横の距離が最も短いマスです。' : 'ここからつながる確定マスは、この1つです。';

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import bank from '../src/game/puzzles.json';
-import { CHARACTERS, ENEMIES, RELICS, characterOf } from '../src/game/content';
-import { dispatch, incomingAttack, newSave, previewAction, resolveAction, spellMultiplier, startRun } from '../src/game/engine';
+import { CHARACTERS, ENEMIES, REPEATABLE_REWARDS, RELICS, characterOf, enemyOf, rewardOf } from '../src/game/content';
+import { chainBonus, chainCapacity, dispatch, incomingAttack, newSave, previewAction, resolveAction, spellMultiplier, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
 import { candidates, countSolutions, singles, solveSingles } from '../src/game/sudoku';
 import type { CharacterId, Run, Save } from '../src/game/types';
@@ -26,9 +26,26 @@ function informedAction(run: Run) {
   return play(run, choices[0].cell, choices[0].skill);
 }
 function informedReward(run: Run) {
-  const preference = ['wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'ward', 'battery', 'afterglow', 'stroke', 'amplifier', 'gold'];
+  if (run.rewards.includes('recovery') && run.hp < run.maxHp * 0.65) return { type: 'reward' as const, relic: 'recovery' as const, revision: run.revision };
+  const preference = ['ward', 'wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'amplifier', 'battery', 'afterglow', 'stroke', 'training', 'vitality', 'recovery', 'gold'];
   const relic = [...run.rewards].sort((a, b) => preference.indexOf(a) - preference.indexOf(b))[0];
   return { type: 'reward' as const, relic, revision: run.revision };
+}
+interface EncounterSample {
+  encounter: number; enemyHp: number; attack: number; moves: number; sheets: number; filled: number;
+  levelStart: number; levelEnd: number; maxChain: number; damage: number; maxDamage: number;
+}
+function recordEncounter(samples: EncounterSample[], before: Run, after: Run) {
+  if (before.phase !== 'battle') return;
+  let sample = samples.find(entry => entry.encounter === before.stage + 1);
+  if (!sample) {
+    sample = { encounter: before.stage + 1, enemyHp: enemyOf(before.stage).hp, attack: enemyOf(before.stage).attack, moves: 0, sheets: 0, filled: 0, levelStart: before.spellLevel, levelEnd: before.spellLevel, maxChain: 0, damage: 0, maxDamage: 0 };
+    samples.push(sample);
+  }
+  const report = after.lastReport!;
+  sample.moves++; sample.sheets = before.encounterSheet; sample.filled += report.path.length;
+  sample.levelEnd = after.spellLevel; sample.maxChain = Math.max(sample.maxChain, report.path.length);
+  sample.damage += report.damage; sample.maxDamage = Math.max(sample.maxDamage, report.damage);
 }
 
 describe('validated puzzles and transformed boards', () => {
@@ -153,9 +170,9 @@ describe('deterministic actions', () => {
     expect(dispatch(save, play(run, root)).run!.phase).toBe('lost');
     run.enemyHp = 1;
     const win = dispatch(save, play(run, root));
-    expect(win.run!.phase).toBe('won'); expect(win.run!.hp).toBe(11); expect(win.meta.wins).toBe(1);
-    expect(win.meta.bestScore).toBe(win.run!.score);
-    expect(win.run!.score).toBe(win.run!.lastReport!.attackScore + 500 + 1000 + 110);
+    expect(win.run!.phase).toBe('reward'); expect(win.run!.hp).toBe(11); expect(win.meta.wins).toBe(0);
+    expect(win.meta.bestKills).toBe(6);
+    expect(win.run!.score).toBe(win.run!.lastReport!.attackScore + 500);
   });
   it('does not accept duplicate actions or duplicate reward collection', () => {
     const save = fixture(); save.run!.enemyHp = 1;
@@ -171,6 +188,86 @@ describe('deterministic actions', () => {
 });
 
 describe('progression, rewards and persistence', () => {
+  it('cycles enemy artwork while HP and attacks keep growing beyond all six archetypes', () => {
+    expect(enemyOf(0)).toMatchObject({ archetypeIndex: 0, encounter: 1, cycle: 1, hp: 1400, attack: 3, strongEvery: 0 });
+    expect(enemyOf(6)).toMatchObject({ archetypeIndex: 0, encounter: 7, cycle: 2, symbol: 'ember', hp: 13500, attack: 9 });
+    expect(enemyOf(17)).toMatchObject({ archetypeIndex: 5, encounter: 18, cycle: 3, symbol: 'dragon', strongEvery: 3 });
+    for (let stage = 1; stage < 60; stage++) {
+      expect(enemyOf(stage).hp).toBeGreaterThan(enemyOf(stage - 1).hp);
+      expect(enemyOf(stage).attack).toBeGreaterThanOrEqual(enemyOf(stage - 1).attack);
+    }
+    expect(enemyOf(30).hp / enemyOf(20).hp).toBeGreaterThan(spellMultiplier(30) / spellMultiplier(20));
+    const run = fixture().run!; run.stage = 17; run.turn = 1;
+    const normal = incomingAttack(run); run.turn = 2;
+    expect(incomingAttack(run)).toBe(normal * 2);
+  });
+  it('uses level growth in both chain allowance and damage while retaining valid read-only forecasts', () => {
+    const run = fixture(31).run!, before = structuredClone(run), roots = singles(run.cells);
+    const low = roots.map(cell => previewAction(run, cell));
+    expect(chainBonus(1)).toBe(0); expect(chainCapacity(run)).toBe(4);
+    run.spellLevel = 20;
+    expect(chainBonus(20)).toBe(19); expect(chainCapacity(run)).toBe(23);
+    const high = roots.map(cell => previewAction(run, cell));
+    expect(Math.max(...high.map(report => report.path.length))).toBeGreaterThan(Math.max(...low.map(report => report.path.length)));
+    expect(Math.max(...high.map(report => report.damage))).toBeGreaterThan(Math.max(...low.map(report => report.damage)) * 4);
+    for (let i = 0; i < roots.length; i++) {
+      expect(high[i].chain!.bonuses).toContainEqual({ label: '術式成長', amount: 19 });
+      expect(new Set(high[i].path.map(event => event.cell)).size).toBe(high[i].path.length);
+      expect(high[i].path.length).toBeLessThanOrEqual(36);
+      expect(resolveAction(run, play(run, roots[i])).lastReport).toEqual(high[i]);
+    }
+    run.spellLevel = 1; expect(run).toEqual(before);
+  });
+  it('keeps offering deterministic repeatable rewards as the unique relic pool runs out', () => {
+    for (const missing of [2, 1, 0]) {
+      const save = fixture(43), run = save.run!;
+      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); run.enemyHp = 1;
+      const next = dispatch(save, play(run));
+      expect(next.run!.phase).toBe('reward'); expect(next.run!.stats.kills).toBe(13);
+      expect(next.run!.rewards).toHaveLength(3); expect(new Set(next.run!.rewards).size).toBe(3);
+      expect(next.run!.rewards.filter(id => REPEATABLE_REWARDS.some(reward => reward.id === id))).toHaveLength(3 - missing);
+      expect(next.run!.rewards.every(id => !!rewardOf(id))).toBe(true);
+      expect(dispatch(save, play(run))).toEqual(next); expect(parseSave(JSON.stringify(next))).toEqual(next);
+      for (const relic of next.run!.rewards) {
+        const reward = { type: 'reward' as const, relic, revision: next.run!.revision };
+        const advanced = dispatch(next, reward);
+        expect(dispatch(parseSave(JSON.stringify(next)), reward)).toEqual(advanced);
+        expect(advanced.run).toMatchObject({ phase: 'battle', stage: 13, encounterSheet: 1, enemyHp: enemyOf(13).hp });
+        if (REPEATABLE_REWARDS.some(option => option.id === relic)) expect(advanced.run!.inventory).toEqual(next.run!.inventory);
+        expect(() => dispatch(advanced, reward)).toThrow('すでに処理');
+      }
+    }
+  });
+  it('applies repeatable training, vitality and recovery without treating them as duplicate relics', () => {
+    const run = fixture().run!;
+    run.phase = 'reward'; run.hp = 7; run.rewards = ['training', 'vitality', 'recovery'];
+    const choose = (relic: 'training' | 'vitality' | 'recovery') => resolveAction(run, { type: 'reward', relic, revision: run.revision });
+    expect(choose('training')).toMatchObject({ spellLevel: 2, maxHp: 44, hp: 17, inventory: [] });
+    expect(choose('vitality')).toMatchObject({ spellLevel: 1, maxHp: 52, hp: 19, inventory: [] });
+    expect(choose('recovery')).toMatchObject({ spellLevel: 1, maxHp: 40, hp: 40, inventory: [] });
+    let next = choose('training'); next.phase = 'reward'; next.rewards = [...run.rewards];
+    next = resolveAction(next, { type: 'reward', relic: 'training', revision: next.revision });
+    expect(next).toMatchObject({ spellLevel: 3, maxHp: 48, hp: 27, inventory: [] });
+  });
+  it('preserves old terminal victories and migrates the highest kill count safely', () => {
+    const legacy = fixture(11) as any;
+    legacy.meta.wins = 1; delete legacy.meta.bestKills;
+    legacy.run.stage = 5; legacy.run.stats.kills = 6; legacy.run.enemyHp = 0; legacy.run.phase = 'won';
+    legacy.run.cells = [...legacy.run.solution];
+    const restored = parseSave(JSON.stringify(legacy));
+    expect(restored.run!.phase).toBe('won'); expect(restored.meta.bestKills).toBe(6);
+    expect(() => dispatch(restored, { type: 'play', cell: 0, skill: false, revision: restored.run!.revision })).toThrow();
+    const abandoned = structuredClone(legacy); abandoned.run = null;
+    expect(parseSave(JSON.stringify(abandoned)).meta.bestKills).toBe(6);
+    const oldActive = fixture(19) as any;
+    oldActive.run.stage = 8; oldActive.run.stats.kills = 8; oldActive.run.enemyHp = enemyOf(8).hp; delete oldActive.meta.bestKills;
+    const active = parseSave(JSON.stringify(oldActive));
+    expect(active.meta.bestKills).toBe(8); expect(active.run!.phase).toBe('battle');
+    expect(parseSave(JSON.stringify(active))).toEqual(active);
+    active.run!.enemyHp = 1;
+    const killed = dispatch(active, play(active.run!));
+    expect(killed.run!.phase).toBe('reward'); expect(killed.meta.bestKills).toBe(9); expect(killed.meta.wins).toBe(0);
+  });
   it('continues a completed sheet against the same enemy, preserving resources and attack cadence', () => {
     const save = fixture(39), run = save.run!;
     run.stage = 2; run.stats.kills = 2; run.enemyHp = ENEMIES[2].hp; run.turn = 1;
@@ -271,8 +368,8 @@ describe('progression, rewards and persistence', () => {
         const run = dispatch(save, play(save.run!)).run!;
         expect(run.rewards).toHaveLength(3);
         expect(new Set(run.rewards).size).toBe(3);
-        expect(run.rewards.some(id => characterOf(c.id).affinity.includes(id))).toBe(true);
-        expect(run.rewards.every(id => !run.inventory.includes(id))).toBe(true);
+        expect(run.rewards.some(id => characterOf(c.id).affinity.some(relic => relic === id))).toBe(true);
+        expect(run.rewards.every(id => !run.inventory.some(relic => relic === id))).toBe(true);
       }
     }
   });
@@ -294,51 +391,54 @@ describe('progression, rewards and persistence', () => {
     const invalid = structuredClone(next); invalid.run!.solution[0] = 0;
     expect(() => parseSave(JSON.stringify(invalid))).toThrow();
   });
-  it('finishes whole six-stage runs through public actions, never stalls or repeats source boards', () => {
-    let wins = 0;
-    const lengths: number[] = [];
-    const results: { seed: number; phase: Run['phase']; moves: number; sheets: number; level: number; hp: number; maxHp: number }[] = [];
-    for (let seed = 1; seed <= 12; seed++) {
+  it('continues beyond six encounters and eventually loses to actual attacks without stalling', () => {
+    const results: { seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; finalAttack: number; shield: number; encounters: EncounterSample[] }[] = [];
+    for (let seed = 1; seed <= 6; seed++) {
       let save = fixture(seed, 'fuse', 0);
+      const encounters: EncounterSample[] = [];
       const visited = [save.run!.puzzleOrder[save.run!.puzzleCursor]];
       while (save.run!.phase === 'battle' || save.run!.phase === 'reward') {
         const run = save.run!;
-        expect(run.stats.moves).toBeLessThan(150);
+        expect(run.stats.moves).toBeLessThan(2000); // Test budget only; there is no runtime encounter cap.
         save = dispatch(save, run.phase === 'reward' ? informedReward(run) : informedAction(run));
+        recordEncounter(encounters, run, save.run!);
         if (save.run!.sheet !== run.sheet) {
           const source = save.run!.puzzleOrder[save.run!.puzzleCursor];
+          if (save.run!.puzzleCursor === 0) { expect(visited.at(-1)).not.toBe(source); visited.length = 0; }
           expect(visited).not.toContain(source); visited.push(source);
         }
         expect(parseSave(JSON.stringify(save))).toEqual(save);
       }
-      if (save.run!.phase === 'won') wins++;
-      lengths.push(save.run!.stats.moves);
-      results.push({ seed, phase: save.run!.phase, moves: save.run!.stats.moves, sheets: save.run!.sheet, level: save.run!.spellLevel, hp: save.run!.hp, maxHp: save.run!.maxHp });
+      const run = save.run!;
+      expect(run.phase).toBe('lost'); expect(run.stats.kills).toBeGreaterThan(6);
+      expect(run.stats.bestChain).toBeGreaterThanOrEqual(20); expect(run.lastReport!.received).toBeGreaterThanOrEqual(run.lastReport!.hpBefore);
+      expect(save.meta.bestKills).toBe(run.stats.kills); expect(save.meta.wins).toBe(0); expect(save.meta.bestScore).toBe(run.score);
+      results.push({ seed, phase: run.phase, kills: run.stats.kills, moves: run.stats.moves, sheets: run.sheet, level: run.spellLevel, hp: run.hp, maxHp: run.maxHp, bestChain: run.stats.bestChain, finalAttack: run.lastReport!.incoming, shield: run.lastReport!.shield, encounters });
     }
     mkdirSync('.runtime', { recursive: true });
-    writeFileSync('.runtime/balance-sample.json', JSON.stringify({ method: 'Deterministic informed play, not a human playtest', runs: 12, wins, moves: lengths, averageMoves: lengths.reduce((a, b) => a + b, 0) / lengths.length, results }, null, 2));
-    expect(wins).toBeGreaterThanOrEqual(9);
-  }, 30000);
-  it('keeps each unlocked character growing through bounded full adventures', () => {
-    const results: { character: CharacterId; seed: number; phase: Run['phase']; moves: number; sheets: number; level: number; hp: number; maxHp: number }[] = [];
+    writeFileSync('.runtime/balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
+  }, 60000);
+  it('lets each unlocked character reach long chains before enemy inflation outgrows the run', () => {
+    const results: { character: CharacterId; seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; encounters: EncounterSample[] }[] = [];
     for (const character of CHARACTERS) {
-      let wins = 0;
-      for (let seed = 21; seed <= 26; seed++) {
+      for (let seed = 21; seed <= 24; seed++) {
         let save = fixture(seed, character.id, 12);
+        const encounters: EncounterSample[] = [];
         while (save.run!.phase === 'battle' || save.run!.phase === 'reward') {
           const run = save.run!;
-          expect(run.stats.moves).toBeLessThan(150);
+          expect(run.stats.moves).toBeLessThan(2000);
           save = dispatch(save, run.phase === 'reward' ? informedReward(run) : informedAction(run));
+          recordEncounter(encounters, run, save.run!);
         }
         const run = save.run!;
         expect(run.stats.sheets).toBeGreaterThan(0); expect(run.spellLevel).toBeGreaterThan(6);
         expect(parseSave(JSON.stringify(save))).toEqual(save);
-        if (run.phase === 'won') wins++;
-        results.push({ character: character.id, seed, phase: run.phase, moves: run.stats.moves, sheets: run.sheet, level: run.spellLevel, hp: run.hp, maxHp: run.maxHp });
+        expect(run.phase).toBe('lost'); expect(run.stats.kills).toBeGreaterThan(6);
+        expect(run.stats.bestChain).toBeGreaterThanOrEqual(20); expect(run.lastReport!.received).toBeGreaterThanOrEqual(run.lastReport!.hpBefore);
+        results.push({ character: character.id, seed, phase: run.phase, kills: run.stats.kills, moves: run.stats.moves, sheets: run.sheet, level: run.spellLevel, hp: run.hp, maxHp: run.maxHp, bestChain: run.stats.bestChain, encounters });
       }
-      expect(wins).toBeGreaterThanOrEqual(4);
     }
     mkdirSync('.runtime', { recursive: true });
-    writeFileSync('.runtime/character-balance-sample.json', JSON.stringify({ method: 'Deterministic informed play with unlocked relics, not a human playtest', runs: results.length, results }, null, 2));
-  }, 30000);
+    writeFileSync('.runtime/character-balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with unlocked relics and ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
+  }, 60000);
 });

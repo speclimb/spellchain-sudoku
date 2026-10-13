@@ -1,10 +1,10 @@
 import bank from './puzzles.json';
-import { CHARACTERS, RELICS, ENEMIES, characterOf } from './content';
+import { CHARACTERS, RELICS, REPEATABLE_REWARDS, characterOf, enemyOf } from './content';
 import { Random, PEERS, UNITS, candidates, near, row, col } from './sudoku';
-import type { Action, ChainTrace, FillEvent, Mark, Report, Run, Save, CharacterId, RelicId } from './types';
+import type { Action, ChainTrace, FillEvent, Mark, Report, Run, Save, CharacterId, RelicId, RewardId } from './types';
 
 export function newSave(): Save {
-  return { version: 1, meta: { clears: 0, runs: 0, wins: 0, bestScore: 0, tutorialDone: false }, run: null, settings: { sound: false, fast: false, reducedMotion: false } };
+  return { version: 1, meta: { clears: 0, runs: 0, wins: 0, bestScore: 0, bestKills: 0, tutorialDone: false }, run: null, settings: { sound: false, fast: false, reducedMotion: false } };
 }
 function prepareBoard(run: Run, random: Random): void {
   const source = bank[run.puzzleOrder[run.puzzleCursor]];
@@ -33,6 +33,17 @@ function nextBoard(run: Run, random: Random): void {
   prepareBoard(run, random);
 }
 export const spellMultiplier = (level: number): number => 1 + (level - 1) * 0.2;
+export const chainBonus = (level: number): number => Math.max(0, level - 1);
+export function chainBonuses(run: Run, skill = false): ChainTrace['bonuses'] {
+  const bonuses = [{ label: '基本', amount: 3 }];
+  if (run.character === 'fuse') bonuses.push({ label: '導火術師', amount: 1 });
+  if (chainBonus(run.spellLevel)) bonuses.push({ label: '術式成長', amount: chainBonus(run.spellLevel) });
+  if (run.inventory.includes('wick')) bonuses.push({ label: '長い導火線', amount: 2 });
+  if (skill && run.character === 'fuse') bonuses.push({ label: '導火術師スキル', amount: 4 });
+  if (!skill && run.afterglow) bonuses.push({ label: '残光の灯', amount: 2 });
+  return bonuses;
+}
+export const chainCapacity = (run: Run, skill = false): number => chainBonuses(run, skill).reduce((sum, bonus) => sum + bonus.amount, 0);
 function grow(run: Run, report: Report, levels: number): void {
   const before = run.hp;
   run.spellLevel += levels; run.maxHp += levels * 4;
@@ -53,18 +64,21 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
     pool: RELICS.filter(r => r.unlock <= save.meta.clears).map(r => r.id), rewards: [], afterglow: false,
     stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0, sheets: 0 }, lastReport: null,
   };
-  prepareBoard(run, random); run.enemyHp = ENEMIES[0].hp; run.randomState = random.state;
+  prepareBoard(run, random); run.enemyHp = enemyOf(0).hp; run.randomState = random.state;
   next.run = run; next.meta.runs++;
   return next;
 }
 export function incomingAttack(run: Run): number {
-  return ENEMIES[run.stage].attack * ((run.stage === 2 || run.stage === 5) && (run.turn + 1) % 3 === 0 ? 2 : 1);
+  const enemy = enemyOf(run.stage);
+  return Math.min(Number.MAX_SAFE_INTEGER, enemy.attack * (enemy.strongEvery && (run.turn + 1) % enemy.strongEvery === 0 ? 2 : 1));
 }
-function rollRewards(run: Run, random: Random): RelicId[] {
+function rollRewards(run: Run, random: Random): RewardId[] {
   const available = random.shuffle(run.pool.filter(id => !run.inventory.includes(id)));
   const affinity = characterOf(run.character).affinity;
   const match = available.find(id => affinity.includes(id));
-  return random.shuffle(match ? [match, ...available.filter(id => id !== match).slice(0, 2)] : available.slice(0, 3));
+  const chosen: RewardId[] = match ? [match, ...available.filter(id => id !== match).slice(0, 2)] : available.slice(0, 3);
+  chosen.push(...random.shuffle(REPEATABLE_REWARDS.map(reward => reward.id)).slice(0, 3 - chosen.length));
+  return random.shuffle(chosen);
 }
 /** One deterministic reducer powers both prediction and execution. Never mutates source. */
 export function resolveAction(source: Run, action: Action): Run {
@@ -72,21 +86,23 @@ export function resolveAction(source: Run, action: Action): Run {
   const run = structuredClone(source);
   const random = new Random(run.randomState);
   if (action.type === 'reward') {
-    if (run.phase !== 'reward' || !run.rewards.includes(action.relic) || run.inventory.includes(action.relic)) throw new Error('この遺物は選べません。');
-    run.inventory.push(action.relic);
-    if (action.relic === 'glass') { run.maxHp -= 8; run.hp = Math.min(run.hp, run.maxHp); }
+    if (run.phase !== 'reward' || !run.rewards.includes(action.relic)) throw new Error('この報酬は選べません。');
+    if (action.relic === 'training') { run.spellLevel++; run.maxHp += 4; run.hp = Math.min(run.maxHp, run.hp + 10); }
+    else if (action.relic === 'vitality') { run.maxHp += 12; run.hp = Math.min(run.maxHp, run.hp + 12); }
+    else if (action.relic === 'recovery') run.hp = run.maxHp;
+    else {
+      if (run.inventory.includes(action.relic)) throw new Error('この遺物は選べません。');
+      run.inventory.push(action.relic);
+      if (action.relic === 'glass') { run.maxHp -= 8; run.hp = Math.min(run.hp, run.maxHp); }
+    }
     run.stage++; nextBoard(run, random); run.encounterSheet = 1;
-    run.enemyHp = ENEMIES[run.stage].hp;
+    run.enemyHp = enemyOf(run.stage).hp;
     run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null;
   } else {
     if (run.phase !== 'battle' || !Number.isInteger(action.cell) || action.cell < 0 || action.cell >= 81 || run.cells[action.cell]) throw new Error('空きマスを選んでください。');
     if (action.skill ? run.mana < 8 : candidates(run.cells, action.cell).length !== 1) throw new Error(action.skill ? '魔力が足りません。' : '数字が確定したマスを選んでください。');
     const has = (id: RelicId) => run.inventory.includes(id);
-    const bonuses = [{ label: '基本', amount: 3 }];
-    if (run.character === 'fuse') bonuses.push({ label: '導火術師', amount: 1 });
-    if (has('wick')) bonuses.push({ label: '長い導火線', amount: 2 });
-    if (action.skill && run.character === 'fuse') bonuses.push({ label: '導火術師スキル', amount: 4 });
-    if (!action.skill && run.afterglow) bonuses.push({ label: '残光の灯', amount: 2 });
+    const bonuses = chainBonuses(run, action.skill);
     let fuel = bonuses.reduce((sum, bonus) => sum + bonus.amount, 0);
     const chain: ChainTrace = { initialAuto: fuel, bonuses, steps: [], stopReason: 'no-target', remainingAuto: fuel };
     const initiallySingle = source.cells.map((value, cell) => !value && candidates(source.cells, cell).length === 1);
@@ -166,11 +182,7 @@ export function resolveAction(source: Run, action: Action): Run {
       report.sweep = run.cells.flatMap((v, i) => v ? [] : [i]);
       run.cells = [...run.solution];
       grow(run, report, fullClear ? 2 : 1);
-      if (run.stage === 5) {
-        run.phase = 'won'; run.score += 1000 + run.hp * 10;
-      } else {
-        run.phase = 'reward'; run.rewards = rollRewards(run, random);
-      }
+      run.phase = 'reward'; run.rewards = rollRewards(run, random);
     } else if (!run.hp) run.phase = 'lost';
     else if (fullClear) {
       grow(run, report, 1); nextBoard(run, random); report.sheetAdvanced = true;
@@ -190,7 +202,7 @@ export function dispatch(save: Save, action: Action): Save {
   const next = structuredClone(save);
   const run = resolveAction(save.run, action);
   next.meta.clears += run.stats.kills - save.run.stats.kills;
-  if (run.phase === 'won' && save.run.phase !== 'won') next.meta.wins++;
+  next.meta.bestKills = Math.max(next.meta.bestKills, run.stats.kills);
   if (run.phase === 'won' || run.phase === 'lost') next.meta.bestScore = Math.max(next.meta.bestScore, run.score);
   next.run = run;
   return next;

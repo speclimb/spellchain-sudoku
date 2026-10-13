@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Run } from '../../src/game/types';
 const key = 'chain-incantation.save.v1';
-test('desktop: title, prediction, animation commit, restoration, all six encounters and result', async ({ page }) => {
+test('desktop: title, prediction, restoration, seventh encounter and a loss result without a six-battle ending', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 1080 });
@@ -23,42 +23,83 @@ test('desktop: title, prediction, animation commit, restoration, all six encount
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
   expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(before);
-  let firstReward = true;
-  for (let step = 0; step < 90; step++) {
-    const run: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
-    if (run.phase === 'won' || run.phase === 'lost') break;
-    if (run.phase === 'reward') {
-      if (firstReward) { await page.screenshot({ path: '.runtime/screenshots/desktop-reward.png', fullPage: true }); firstReward = false; }
-      const order = ['wick', 'pen', 'lens', 'glass', 'ward', 'battery', 'afterglow', 'stroke', 'gold'];
-      const id = [...run.rewards].sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
-      await page.locator(`[data-reward="${id}"]`).click();
-      continue;
+  // Reach the old final opponent with the public reducer, then exercise the
+  // sixth/seventh wins, reward choices and actual HP-zero action through the UI.
+  await page.evaluate(async key => {
+    const enginePath = '/src/game/engine.ts';
+    const sudokuPath = '/src/game/sudoku.ts';
+    const { dispatch, newSave, startRun } = await import(/* @vite-ignore */ enginePath);
+    const { singles } = await import(/* @vite-ignore */ sudokuPath);
+    let save = startRun(newSave(), 'fuse', 21);
+    save.meta.tutorialDone = true;
+    save.settings.reducedMotion = true;
+    for (let encounter = 0; encounter < 5; encounter++) {
+      save.run.enemyHp = 1;
+      save = dispatch(save, { type: 'play', cell: singles(save.run.cells)[0], skill: false, revision: save.run.revision });
+      save = dispatch(save, { type: 'reward', relic: save.run.rewards[0], revision: save.run.revision });
     }
-    const choice = await page.evaluate(async key => {
-      const enginePath = '/src/game/engine.ts';
-      const sudokuPath = '/src/game/sudoku.ts';
-      const { previewAction } = await import(/* @vite-ignore */ enginePath);
-      const { singles } = await import(/* @vite-ignore */ sudokuPath);
-      const run = JSON.parse(localStorage.getItem(key)!).run;
-      const choices = singles(run.cells).map((cell: number) => ({ cell, skill: false, report: previewAction(run, cell) }));
-      if (run.mana === 8) run.cells.forEach((value: number, cell: number) => { if (!value) choices.push({ cell, skill: true, report: previewAction(run, cell, true) }); });
-      const value = (c: any) => (c.report.defeated ? 10000 : 0) + Math.min(run.enemyHp, c.report.damage) - c.report.received * 15;
-      choices.sort((a: any, b: any) => value(b) - value(a));
-      return { cell: choices[0].cell, skill: choices[0].skill, damage: choices[0].report.damage };
-    }, key);
-    if (choice.skill) await page.locator('[data-action="skill"]').click();
-    await page.locator(`[data-cell="${choice.cell}"]`).click();
-    await expect(page.locator('#prediction-damage')).toHaveText(choice.damage.toLocaleString('ja-JP'));
+    save.run.enemyHp = 1;
+    localStorage.setItem(key, JSON.stringify(save));
+  }, key);
+  await page.reload();
+  await page.getByRole('button', { name: /冒険の続きへ/ }).click();
+  for (let expectedStage = 6; expectedStage <= 7; expectedStage++) {
+    await page.locator('[data-cell][aria-disabled="false"]').first().click();
     await page.locator('[data-action="cast"]').click();
-    await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run.revision, key)).toBeGreaterThan(run.revision);
-    await expect(page.locator('[data-action="cast"]')).not.toHaveText('詠唱中…');
+    await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
+    const rewardRun: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+    expect(rewardRun.phase).toBe('reward');
+    expect(rewardRun.stats.kills).toBe(expectedStage);
+    if (expectedStage === 6) await page.screenshot({ path: '.runtime/screenshots/desktop-reward.png', fullPage: true });
+    await page.locator(`[data-reward="${rewardRun.rewards[0]}"]`).click();
+    const continued: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+    expect(continued.phase).toBe('battle');
+    expect(continued.stage).toBe(expectedStage);
+    await expect(page.locator('.endless-track')).toContainText(`第${expectedStage + 1}戦`);
+    await expect(page.getByRole('dialog', { name: '冒険の結果' })).toHaveCount(0);
+    if (expectedStage === 6) {
+      await page.screenshot({ path: '.runtime/screenshots/desktop-seventh-encounter.png', fullPage: true });
+      await page.evaluate(key => {
+        const save = JSON.parse(localStorage.getItem(key)!);
+        save.run.enemyHp = 1;
+        localStorage.setItem(key, JSON.stringify(save));
+      }, key);
+      await page.reload();
+      await page.getByRole('button', { name: /冒険の続きへ/ }).click();
+    }
   }
+  const fatal = await page.evaluate(async key => {
+    const enginePath = '/src/game/engine.ts';
+    const sudokuPath = '/src/game/sudoku.ts';
+    const { previewAction } = await import(/* @vite-ignore */ enginePath);
+    const { singles } = await import(/* @vite-ignore */ sudokuPath);
+    const save = JSON.parse(localStorage.getItem(key)!);
+    save.run.hp = 1;
+    for (const cell of singles(save.run.cells)) {
+      const report = previewAction(save.run, cell);
+      if (!report.defeated && !report.fullClear && report.received > 0) {
+        localStorage.setItem(key, JSON.stringify(save));
+        return { cell, report };
+      }
+    }
+    throw new Error('No surviving-enemy fatal counter fixture found');
+  }, key);
+  await page.reload();
+  await page.getByRole('button', { name: /冒険の続きへ/ }).click();
+  await page.locator(`[data-cell="${fatal.cell}"]`).click();
+  await expect(page.locator('#prediction-damage')).toHaveText(fatal.report.damage.toLocaleString('ja-JP'));
+  await page.locator('[data-action="cast"]').click();
   await expect(page.getByRole('dialog', { name: '冒険の結果' })).toBeVisible();
   const final: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
-  expect(final.phase).toBe('won');
-  expect(final.stats.kills).toBe(6);
-  expect(final.inventory).toHaveLength(5);
+  expect(final.phase).toBe('lost');
+  expect(final.hp).toBe(0);
+  expect(final.stats.kills).toBe(7);
+  expect(final.stage).toBe(7);
+  await expect(page.getByRole('dialog', { name: '冒険の結果' })).toContainText('第8戦');
   await page.screenshot({ path: '.runtime/screenshots/desktop-result.png', fullPage: true });
+  const ended = await page.evaluate(key => localStorage.getItem(key), key);
+  await page.reload();
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(ended);
   expect(errors).toEqual([]);
 });
 
@@ -113,7 +154,7 @@ test('reload during the victory animation preserves a single clear and the exact
   expect(committed.run.phase).toBe('reward');
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
-  await expect(page.getByRole('dialog', { name: '遺物の選択' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
   const restored = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
   expect(restored).toEqual(committed);
   await page.screenshot({ path: '.runtime/screenshots/mobile-reward.png', fullPage: true });

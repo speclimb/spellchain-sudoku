@@ -68,6 +68,15 @@ export class IncantationAudio {
       this.tone(frequency * (defeated ? 1.5 : 1), time + i * 0.018, 0.3 + strength * 0.16, 0.034 + strength * 0.006, 'triangle');
     }
   }
+  completion(kind: 'line' | 'box' | 'cross', count = 1): void {
+    const context = this.context;
+    if (!context || context.state !== 'running') return;
+    const time = context.currentTime;
+    const root = kind === 'box' ? 440 : kind === 'cross' ? 659.25 : 523.25;
+    const volume = 0.027 + Math.min(count, 3) * 0.004;
+    for (const [i, ratio] of [1, 1.25, 1.5, 2].entries()) this.tone(root * ratio, time + i * 0.022, 0.23, volume, 'triangle');
+    if (kind === 'cross') this.tone(130.81, time, 0.25, 0.05, 'sine', 65.4);
+  }
   attack(received: number, blocked = false): void {
     const context = this.context;
     if (!context || context.state !== 'running') return;

@@ -1,5 +1,7 @@
 export type CharacterId = 'fuse' | 'scribe' | 'lumen';
 export type RelicId = 'wick' | 'echo' | 'rekindle' | 'pen' | 'ward' | 'stroke' | 'battery' | 'amplifier' | 'afterglow' | 'lens' | 'glass' | 'gold';
+export type RepeatableRewardId = 'training' | 'vitality' | 'recovery';
+export type RewardId = RelicId | RepeatableRewardId;
 export type Mark = 'weak' | 'shield' | null;
 export type Phase = 'battle' | 'reward' | 'won' | 'lost';
 export interface FillEvent {
@@ -31,13 +33,13 @@ export interface Run {
   cells: number[]; solution: number[]; givens: boolean[]; marks: Mark[];
   puzzleOrder: number[]; puzzleCursor: number; sheet: number; encounterSheet: number; spellLevel: number;
   hp: number; maxHp: number; mana: number; enemyHp: number;
-  score: number; inventory: RelicId[]; pool: RelicId[]; rewards: RelicId[]; afterglow: boolean;
+  score: number; inventory: RelicId[]; pool: RelicId[]; rewards: RewardId[]; afterglow: boolean;
   stats: { moves: number; filled: number; bestChain: number; kills: number; skills: number; sheets: number };
   lastReport: Report | null;
 }
 export type Action =
   | { type: 'play'; cell: number; skill: boolean; revision: number }
-  | { type: 'reward'; relic: RelicId; revision: number };
-export interface Meta { clears: number; runs: number; wins: number; bestScore: number; tutorialDone: boolean }
+  | { type: 'reward'; relic: RewardId; revision: number };
+export interface Meta { clears: number; runs: number; wins: number; bestScore: number; bestKills: number; tutorialDone: boolean }
 export interface Settings { sound: boolean; fast: boolean; reducedMotion: boolean }
 export interface Save { version: 1; meta: Meta; run: Run | null; settings: Settings }

@@ -58,6 +58,11 @@ async function saved(page: Page): Promise<Save> {
   return page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
 }
 
+/** Short presentation phases need a steady poll, rather than retry backoff. */
+async function phase(page: Page, expected: string): Promise<void> {
+  await expect.poll(() => page.evaluate(() => document.querySelector('.combat-effects')?.getAttribute('data-phase')), { intervals: [20], timeout: 5000 }).toBe(expected);
+}
+
 async function finished(page: Page): Promise<void> {
   await expect(page.locator('[data-action="cast"]')).not.toHaveText('詠唱中…');
   await expect(page.locator('.combat-effects[data-phase]')).toHaveCount(0);
@@ -70,16 +75,16 @@ test('chain, score strike and damaging counter are distinct visible phases with 
   const { report, before } = await prepareCombat(page, 'hit');
   await page.locator('[data-action="cast"]').click();
   const effects = page.locator('.combat-effects');
-  await expect(effects).toHaveAttribute('data-phase', 'chain');
+  await phase(page, 'chain');
   await expect(effects.locator('.combat-chain')).toBeVisible();
   await expect(page.locator('[data-action="cast"]')).toBeDisabled();
-  await expect(effects.locator('.combat-chain strong')).toHaveText(String(report.path.length));
+  await expect.poll(() => page.evaluate(() => document.querySelector('.combat-chain strong')?.textContent), { intervals: [20] }).toBe(String(report.path.length));
   await page.screenshot({ path: '.runtime/screenshots/desktop-combat-chain.png', fullPage: false });
-  await expect(effects).toHaveAttribute('data-phase', 'strike');
+  await phase(page, 'strike');
   await expect(effects.locator('.combat-number')).toContainText(report.damage.toLocaleString('ja-JP'));
   await expect(effects.locator('.combat-score')).toContainText(report.attackScore.toLocaleString('ja-JP'));
   await page.screenshot({ path: '.runtime/screenshots/desktop-combat-strike.png', fullPage: false });
-  await expect(effects).toHaveAttribute('data-phase', 'counter');
+  await phase(page, 'counter');
   await expect(effects.locator('.combat-caption')).toContainText(/反撃|強攻撃/);
   await expect(effects.locator('.combat-number')).toContainText(`−${report.received}`);
   await page.screenshot({ path: '.runtime/screenshots/desktop-combat-counter.png', fullPage: false });
@@ -99,7 +104,7 @@ test('mobile shield counter shows complete defense and combat effects do not ove
   const { report, before } = await prepareCombat(page, 'block');
   await page.locator('[data-action="cast"]').click();
   const effects = page.locator('.combat-effects');
-  await expect(effects).toHaveAttribute('data-phase', 'counter');
+  await phase(page, 'counter');
   await expect(effects.locator('.combat-caption')).toContainText('完全防御');
   await expect(effects.locator('.combat-number')).toContainText('0');
   await expect(effects.locator('.combat-shield')).toBeVisible();
@@ -117,7 +122,7 @@ test('full sheet advances against the same enemy, grows the spell and restores e
   await page.setViewportSize({ width: 390, height: 844 });
   const { before, report } = await prepareCombat(page, 'sheet');
   await page.locator('[data-action="cast"]').click();
-  await expect(page.locator('.combat-effects')).toHaveAttribute('data-phase', 'sheet');
+  await phase(page, 'sheet');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const committed = await saved(page);
   const after = committed.run!;
@@ -142,7 +147,7 @@ test('full sheet advances against the same enemy, grows the spell and restores e
   await expect(page.locator('.spell-growth')).toContainText(`術式 Lv.${after.spellLevel}`);
   await expect(page.locator('canvas')).toBeVisible();
   expect(await saved(page)).toEqual(committed);
-  await expect(page.getByRole('dialog', { name: '遺物の選択' })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: '成長の選択' })).toHaveCount(0);
   await expect(page.locator('.combat-effects[data-phase]')).toHaveCount(0);
   await page.screenshot({ path: '.runtime/screenshots/mobile-grown-sheet.png', fullPage: true });
   expect(errors).toEqual([]);
@@ -151,9 +156,14 @@ test('full sheet advances against the same enemy, grows the spell and restores e
 test('sheet completion visibly announces spell growth before clearing the effect layer', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const { before } = await prepareCombat(page, 'sheet');
+  await page.locator('[data-action="chain-guide"]').click();
+  await page.locator('[data-action="chain-next"]').click();
+  await expect(page.locator('#chain-step-detail')).toContainText('次のシート');
+  await expect(page.locator('#chain-step-detail')).not.toContainText('残りHPに関係なく勝利');
+  await page.locator('[data-action="chain-close"]').click();
   await page.locator('[data-action="cast"]').click();
   const effects = page.locator('.combat-effects');
-  await expect(effects).toHaveAttribute('data-phase', 'growth');
+  await phase(page, 'growth');
   await expect(effects.locator('.combat-caption')).not.toBeEmpty();
   await expect(effects.locator('.combat-number')).toContainText(String(before.spellLevel + 1));
   await page.screenshot({ path: '.runtime/screenshots/desktop-spell-growth.png', fullPage: false });
@@ -165,7 +175,7 @@ test('reduced motion keeps readable static outcomes, fast mode clears promptly, 
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareCombat(page, 'hit', { reducedMotion: true });
   await page.locator('[data-action="cast"]').click();
-  await expect(page.locator('.combat-effects')).toHaveAttribute('data-phase', 'strike');
+  await phase(page, 'strike');
   await expect(page.locator('html')).toHaveClass(/reduced-motion/);
   expect(await page.locator('.combat-effects').evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
   await finished(page);

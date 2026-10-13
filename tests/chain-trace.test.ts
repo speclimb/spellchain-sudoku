@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dispatch, newSave, previewAction, resolveAction, startRun } from '../src/game/engine';
+import { chainBonus, chainCapacity, dispatch, newSave, previewAction, resolveAction, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
 import { candidates, col, near, PEERS, row, singles, UNITS } from '../src/game/sudoku';
 import type { ChainTrace, Run } from '../src/game/types';
@@ -18,6 +18,21 @@ function boardWith(blanks: number[]): Run {
 const trace = (run: Run, cell: number, skill = false): ChainTrace => previewAction(run, cell, skill).chain!;
 
 describe('explanatory chain trace', () => {
+  it('attributes level growth to its shared allowance and stops naturally at the board size', () => {
+    const run = boardWith([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(trace(run, 0).steps).toHaveLength(5);
+    run.spellLevel = 5;
+    const grown = trace(run, 0);
+    expect(grown.bonuses).toContainEqual({ label: '術式成長', amount: 4 });
+    expect(grown.initialAuto).toBe(chainCapacity(run)); expect(grown.steps).toHaveLength(9);
+    expect(grown.stopReason).toBe('board-complete'); expect(grown.remainingAuto).toBe(0);
+    run.spellLevel = 200;
+    const late = trace(run, 0);
+    expect(chainBonus(run.spellLevel)).toBe(199);
+    expect(late.initialAuto).toBe(203); expect(late.steps).toHaveLength(9);
+    expect(late.stopReason).toBe('board-complete'); expect(late.remainingAuto).toBe(195);
+    expect(late.steps.reduce((sum, step) => sum + (step.source === 'chain' ? 1 : 0), 0)).toBe(8);
+  });
   it('accounts for the fuse normal five-cell chain and skill nine-cell chain without charging the root', () => {
     const run = boardWith([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     const normal = trace(run, 0);

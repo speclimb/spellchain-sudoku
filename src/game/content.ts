@@ -1,4 +1,4 @@
-import type { CharacterId, RelicId } from './types';
+import type { CharacterId, RelicId, RepeatableRewardId, RewardId } from './types';
 export interface Character { id: CharacterId; name: string; symbol: string; title: string; passive: string; skill: string; skillName: string; unlock: number; affinity: RelicId[] }
 export const CHARACTERS: Character[] = [
   { id: 'fuse', name: '導火術師', symbol: '✦', title: '連鎖をつなぐ者', passive: '自動入力回数＋1', skillName: '星火連環', skill: '任意の空きマスから始動。この手の自動入力回数をさらに＋4。', unlock: 0, affinity: ['wick', 'echo', 'rekindle', 'lens'] },
@@ -28,5 +28,22 @@ export const ENEMIES = [
   { name: '星喰いの影', title: 'THE STAR DEVOURER', hp: 6500, attack: 5, symbol: 'star', lore: '集めた遺物と育った詠唱が、闇の中で共鳴する。' },
   { name: '零の古竜', title: 'THE DRAGON OF ZERO', hp: 9000, attack: 6, symbol: 'dragon', lore: '幾重もの魔法陣を越えて、あなたの詠唱を夜空に刻め。' },
 ];
+/** Stage is an encounter index, while the six shapes repeat through deeper cycles. */
+export function enemyOf(stage: number) {
+  const archetypeIndex = stage % ENEMIES.length, archetype = ENEMIES[archetypeIndex];
+  const depth = Math.max(0, stage - 5);
+  return {
+    ...archetype, archetypeIndex, encounter: stage + 1, cycle: Math.floor(stage / ENEMIES.length) + 1,
+    hp: depth ? Math.min(Number.MAX_SAFE_INTEGER, Math.round(ENEMIES[5].hp * 1.5 ** depth)) : archetype.hp,
+    attack: depth ? Math.min(Number.MAX_SAFE_INTEGER, 6 + depth * 2 + depth * depth) : archetype.attack,
+    strongEvery: archetypeIndex === 2 || archetypeIndex === 5 ? 3 : 0,
+  };
+}
+export const REPEATABLE_REWARDS: { id: RepeatableRewardId; name: string; symbol: string; kind: string; description: string }[] = [
+  { id: 'training', name: '術式の鍛錬', symbol: '✦', kind: '鍛錬', description: '術式レベル＋1。攻撃倍率＋0.2・自動入力回数＋1・最大HP＋4、HPを10回復。何度でも選べる。' },
+  { id: 'vitality', name: '生命の器', symbol: '♡', kind: '成長', description: '最大HP＋12、HPを12回復。何度でも選べる。' },
+  { id: 'recovery', name: '癒しの泉', symbol: '✚', kind: '回復', description: 'HPを全回復。何度でも選べる。' },
+];
 export const characterOf = (id: CharacterId) => CHARACTERS.find(c => c.id === id)!;
 export const relicOf = (id: RelicId) => RELICS.find(r => r.id === id)!;
+export const rewardOf = (id: RewardId) => [...RELICS, ...REPEATABLE_REWARDS].find(r => r.id === id)!;

@@ -230,7 +230,7 @@ export class Board {
   async animate(before: Run, _after: Run, report: Report, settings: Settings, note: (n: number, completed: boolean) => void, onFill?: (event: FillEvent) => void): Promise<void> {
     const transient = structuredClone(before);
     if (this.scene.ready) this.scene.clearEffects();
-    const delay = settings.reducedMotion ? 0 : Math.min(115, (settings.fast ? 480 : 1150) / Math.max(1, report.path.length));
+    const delay = settings.reducedMotion ? 0 : Math.min(100, (settings.fast ? 360 : 1050) / Math.max(1, report.path.length));
     let previous: number | null = null;
     for (const event of report.path) {
       transient.cells[event.cell] = event.value;
@@ -249,7 +249,7 @@ export class Board {
     if (!settings.reducedMotion) {
       this.scene.sweep(report.sweep, settings.fast);
       this.scene.finale(report, settings.fast);
-      await new Promise(resolve => setTimeout(resolve, settings.fast ? 180 : 340));
+      await new Promise(resolve => setTimeout(resolve, settings.fast ? 100 : 200));
     }
   }
 }

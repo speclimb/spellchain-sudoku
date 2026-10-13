@@ -1,15 +1,27 @@
-import { spellMultiplier } from '../game/engine';
-import { ENEMIES } from '../game/content';
+import './completion-effects.css';
+import { chainBonus, spellMultiplier } from '../game/engine';
+import { enemyOf } from '../game/content';
 import type { FillEvent, Report, Run, Settings } from '../game/types';
 import type { IncantationAudio } from './audio';
 
 const fmt = (value: number) => value.toLocaleString('ja-JP');
 const pause = (duration: number) => new Promise<void>(resolve => setTimeout(resolve, duration));
+type CompletionKind = 'line' | 'box' | 'cross';
+const completionKind = (units: Set<number>): CompletionKind => {
+  const line = [...units].some(unit => unit < 18), box = [...units].some(unit => unit >= 18);
+  return line && box ? 'cross' : box ? 'box' : 'line';
+};
 
 /** Presentation only. The entire action is already committed before these effects start. */
 export class CombatEffects {
   private host = document.createElement('div');
   private settings: Settings;
+  private cutin: HTMLElement | null = null;
+  private cutinTimer: number | null = null;
+  private cutinUnits = new Set<number>();
+  private cutinCount = 0;
+  private cutinBudget = 0;
+  private destroyed = false;
   constructor(settings: Settings, private audio: IncantationAudio) {
     this.settings = { ...settings };
     this.host.className = 'combat-effects';
@@ -43,36 +55,88 @@ export class CombatEffects {
     this.host.classList.add('fx-pulse');
   }
   fill(event: FillEvent): void {
+    if (this.destroyed) return;
     this.position();
     this.host.dataset.intensity = event.ordinal >= 8 ? 'high' : event.ordinal >= 4 ? 'medium' : 'low';
     this.text('.combat-chain strong', String(event.ordinal));
     const label = event.units.length ? `${event.units.length}単位完成！` : event.mark === 'weak' ? '弱点に命中！' : event.mark === 'shield' ? '守護を獲得' : event.ordinal >= 8 ? '連鎖大爆発！' : event.ordinal >= 4 ? '連鎖加速！' : '詠唱をつなげ！';
     this.phase('chain', label);
+    this.complete(event.units);
+  }
+  private complete(units: number[]): void {
+    if (!units.length) return;
+    if (this.cutin) {
+      // Nearby completions become one larger spell, without restarting its timer
+      // or holding up the chain. This also preserves simultaneous line + box hits.
+      const previous = completionKind(this.cutinUnits);
+      for (const unit of units) this.cutinUnits.add(unit);
+      this.updateCutin();
+      if (previous !== 'cross' && completionKind(this.cutinUnits) === 'cross' && this.settings.sound) this.audio.completion('cross', this.cutinUnits.size);
+      return;
+    }
+    const duration = this.settings.fast || this.settings.reducedMotion ? 180 : 320;
+    if (this.cutinCount >= 3 || this.cutinBudget + duration > 960) return;
+    this.cutinCount++; this.cutinBudget += duration;
+    this.cutinUnits = new Set(units);
+    this.cutin = document.createElement('div');
+    this.cutin.className = `completion-cutin${this.settings.reducedMotion ? ' completion-still' : ''}`;
+    this.cutin.setAttribute('aria-hidden', 'true');
+    this.cutin.style.setProperty('--completion-duration', `${duration}ms`);
+    this.cutin.innerHTML = '<div class="completion-veil"></div><div class="completion-beam completion-beam-one"></div><div class="completion-beam completion-beam-two"></div><div class="completion-streaks"></div><div class="completion-seal"><svg viewBox="0 0 320 320" fill="none"><circle cx="160" cy="160" r="143"/><circle cx="160" cy="160" r="126"/><circle cx="160" cy="160" r="92"/><path d="M160 31 272 224 48 224Z M160 289 48 96 272 96Z M160 17V42 M160 278V303 M17 160H42 M278 160H303 M59 59 78 78 M242 242 261 261 M59 261 78 242 M242 78 261 59"/><path d="M160 111 188 160 160 209 132 160Z"/></svg><div class="completion-runes">✦ · Ⅸ · ✧ · Ⅲ · ✦ · Ⅵ · ✧ · Ⅰ</div></div><div class="completion-copy"><span class="completion-kicker"></span><strong class="completion-title"></strong><span class="completion-count"></span></div>';
+    this.updateCutin();
+    document.body.append(this.cutin);
+    if (this.settings.sound) this.audio.completion(completionKind(this.cutinUnits), this.cutinUnits.size);
+    this.cutinTimer = window.setTimeout(() => this.clearCutin(), duration);
+  }
+  private updateCutin(): void {
+    if (!this.cutin) return;
+    const kind = completionKind(this.cutinUnits);
+    const rows = [...this.cutinUnits].filter(unit => unit < 9).length;
+    const columns = [...this.cutinUnits].filter(unit => unit >= 9 && unit < 18).length;
+    const boxes = [...this.cutinUnits].filter(unit => unit >= 18).length;
+    const detail = [rows ? `${rows}行` : '', columns ? `${columns}列` : '', boxes ? `${boxes}区画` : ''].filter(Boolean).join(' ＋ ');
+    this.cutin.dataset.completion = kind;
+    this.cutin.dataset.unitCount = String(this.cutinUnits.size);
+    this.cutin.dataset.direction = rows && columns ? 'both' : columns ? 'column' : 'row';
+    this.cutin.querySelector('.completion-kicker')!.textContent = kind === 'cross' ? 'CROSS CAST' : kind === 'box' ? 'ARCANE SEAL' : 'LINE SPELL';
+    this.cutin.querySelector('.completion-title')!.textContent = kind === 'cross' ? '複合詠唱 完成！' : kind === 'box' ? '3×3区画 完成！' : 'ライン 完成！';
+    this.cutin.querySelector('.completion-count')!.textContent = `${this.cutinUnits.size}単位完成 · ${detail}`;
+  }
+  private clearCutin(): void {
+    if (this.cutinTimer !== null) window.clearTimeout(this.cutinTimer);
+    this.cutinTimer = null;
+    this.cutin?.remove(); this.cutin = null;
+    this.cutinUnits.clear();
   }
   private duration(normal: number): number {
     return this.settings.reducedMotion ? 140 : this.settings.fast ? 100 : normal;
   }
   async finish(before: Run, after: Run, report: Report): Promise<void> {
+    // Reduced-motion fills happen in one frame. Let their final static completion
+    // banner be painted once before switching to the strike result.
+    if (this.settings.reducedMotion && this.cutin) await pause(180);
+    this.clearCutin();
+    const enemy = enemyOf(before.stage);
     this.position('enemy');
     this.phase('strike', report.defeated ? '撃破！' : report.skill ? '奥義炸裂！' : '連鎖炸裂！', fmt(report.damage));
     this.text('.combat-score', `SCORE +${fmt(report.attackScore)}`);
     const enemyHp = Math.max(0, before.enemyHp - report.damage);
     const enemyTrack = document.querySelector<HTMLElement>('.enemy-health .health-track i');
     const enemyLabel = document.querySelector<HTMLElement>('.enemy-health > span');
-    if (enemyTrack) enemyTrack.style.width = `${Math.min(100, enemyHp / ENEMIES[before.stage].hp * 100)}%`;
+    if (enemyTrack) enemyTrack.style.width = `${Math.min(100, enemyHp / enemy.hp * 100)}%`;
     if (enemyLabel) { enemyLabel.firstChild!.textContent = String(enemyHp); }
     const score = document.querySelector<HTMLElement>('.run-score strong');
     if (score) score.textContent = fmt(before.score + report.attackScore);
     if (this.settings.sound) this.audio.impact(report.path.length, report.defeated);
     document.querySelector('.enemy-card')?.classList.add('enemy-struck');
-    await pause(this.duration(520));
+    await pause(this.duration(380));
     document.querySelector('.enemy-card')?.classList.remove('enemy-struck');
 
     if (!report.defeated) {
       this.position();
       const blocked = report.received === 0;
       const prevented = Math.min(report.incoming, report.shield);
-      const strongAttack = report.incoming > 0 && (before.stage === 2 || before.stage === 5) && (before.turn + 1) % 3 === 0;
+      const strongAttack = report.incoming > enemy.attack;
       this.host.dataset.blocked = String(blocked);
       this.host.dataset.heavy = String(strongAttack);
       this.phase('counter', blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', blocked ? '0' : `−${report.received}`, prevented ? `盾で ${prevented} 軽減` : '');
@@ -83,21 +147,24 @@ export class CombatEffects {
       if (health) health.firstChild!.textContent = String(Math.max(0, before.hp - report.received));
       if (healthBar) healthBar.style.width = `${Math.max(0, before.hp - report.received) / before.maxHp * 100}%`;
       if (this.settings.sound) this.audio.attack(report.received, blocked);
-      await pause(this.duration(560));
+      await pause(this.duration(360));
       document.querySelector('.app-shell')?.classList.remove('player-struck', 'player-blocked');
     }
     if (report.sheetAdvanced) {
       this.position();
       this.phase('sheet', 'シート完成！', `次のシート ${after.encounterSheet}`, `同じ敵との戦いは続く · 残りHP ${fmt(after.enemyHp)}`);
       if (this.settings.sound) this.audio.sheetClear();
-      await pause(this.duration(600));
+      await pause(this.duration(320));
     }
     if ((report.levelsGained ?? 0) > 0) {
-      this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 最大HP +${report.maxHpGained ?? 0} · 回復 +${report.healed}`);
-      await pause(this.duration(550));
+      const chainGained = chainBonus(after.spellLevel) - chainBonus(report.spellLevelBefore ?? before.spellLevel);
+      this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 自動連鎖 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 回復 +${report.healed}`);
+      await pause(this.duration(340));
     }
   }
   destroy(): void {
+    this.destroyed = true;
+    this.clearCutin();
     this.host.remove();
     document.querySelector('.app-shell')?.classList.remove('player-struck', 'player-blocked');
     document.querySelector('.enemy-card')?.classList.remove('enemy-struck');

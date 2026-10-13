@@ -1,4 +1,4 @@
-import { CHARACTERS, RELICS, ENEMIES } from './content';
+import { CHARACTERS, RELICS, REPEATABLE_REWARDS, enemyOf } from './content';
 import { Random, UNITS } from './sudoku';
 import bank from './puzzles.json';
 import { newSave } from './engine';
@@ -11,17 +11,20 @@ export function parseSave(raw: string): Save {
   const data: unknown = JSON.parse(raw);
   if (!record(data) || data.version !== 1 || !record(data.meta) || !record(data.settings)) throw new Error('保存形式を読み込めません。');
   if (!['clears', 'runs', 'wins', 'bestScore'].every(k => integer(data.meta[k])) || typeof data.meta.tutorialDone !== 'boolean' || !['sound', 'fast', 'reducedMotion'].every(k => typeof data.settings[k] === 'boolean')) throw new Error('記録が破損しています。');
+  if (data.meta.bestKills !== undefined && !integer(data.meta.bestKills)) throw new Error('記録が破損しています。');
   const r = data.run;
   if (r !== null) {
-    const relics = new Set(RELICS.map(x => x.id));
+    const relics = new Set<string>(RELICS.map(x => x.id));
     const relicList = (v: unknown) => Array.isArray(v) && new Set(v).size === v.length && v.every(id => relics.has(id));
+    const rewardIds = new Set([...relics, ...REPEATABLE_REWARDS.map(x => x.id)]);
+    const rewardList = (v: unknown) => Array.isArray(v) && new Set(v).size === v.length && v.every(id => rewardIds.has(id));
     if (!record(r) || !CHARACTERS.some(c => c.id === r.character) || !['battle', 'reward', 'won', 'lost'].includes(r.phase) || typeof r.id !== 'string' || typeof r.afterglow !== 'boolean') throw new Error('冒険の記録を読み込めません。');
-    if (!integer(r.seed, 0, 0xffffffff) || !integer(r.randomState, 0, 0xffffffff) || !integer(r.revision) || !integer(r.stage, 0, 5) || !integer(r.turn) || !integer(r.maxHp, 1) || !integer(r.hp, 0, r.maxHp) || !integer(r.mana, 0, 8) || !integer(r.enemyHp, 0, ENEMIES[r.stage]?.hp) || !integer(r.score)) throw new Error('冒険の数値が不正です。');
+    if (!integer(r.seed, 0, 0xffffffff) || !integer(r.randomState, 0, 0xffffffff) || !integer(r.revision) || !integer(r.stage) || !integer(r.turn) || !integer(r.maxHp, 1) || !integer(r.hp, 0, r.maxHp) || !integer(r.mana, 0, 8) || !integer(r.enemyHp, 0, enemyOf(r.stage).hp) || !integer(r.score)) throw new Error('冒険の数値が不正です。');
     // The original v1 run stored six future boards. Keep that prefix, its current
     // board, HP and reward roll intact, then append all unused sources with a
     // separate deterministic stream so migration never rerolls combat/rewards.
     if (r.puzzleCursor === undefined && r.sheet === undefined && r.encounterSheet === undefined && r.spellLevel === undefined) {
-      if (!vector(r.puzzleOrder, 6, v => integer(v, 0, bank.length - 1)) || new Set(r.puzzleOrder).size !== 6) throw new Error('問題の記録が不正です。');
+      if (r.stage > 5 || !vector(r.puzzleOrder, 6, v => integer(v, 0, bank.length - 1)) || new Set(r.puzzleOrder).size !== 6) throw new Error('問題の記録が不正です。');
       const unused = bank.map((_, i) => i).filter(i => !r.puzzleOrder.includes(i));
       r.puzzleOrder = [...r.puzzleOrder, ...new Random(r.seed ^ 0x51ee7).shuffle(unused)];
       r.puzzleCursor = r.stage; r.sheet = r.stage + 1; r.encounterSheet = 1;
@@ -31,8 +34,8 @@ export function parseSave(raw: string): Save {
     if (!integer(r.puzzleCursor, 0, bank.length - 1) || !integer(r.sheet, 1) || !integer(r.encounterSheet, 1, r.sheet) || !integer(r.spellLevel, 1, 1000000)) throw new Error('成長の記録が不正です。');
     if (!vector(r.solution, 81, v => integer(v, 1, 9)) || !UNITS.every(u => new Set(u.map(i => r.solution[i])).size === 9) || !vector(r.cells, 81, v => integer(v, 0, 9)) || !r.cells.every((v: number, i: number) => v === 0 || v === r.solution[i]) || !vector(r.givens, 81, v => typeof v === 'boolean') || r.givens.filter(Boolean).length !== 45 || !r.givens.every((v: boolean, i: number) => !v || r.cells[i] !== 0)) throw new Error('盤面の記録が不正です。');
     if (!vector(r.marks, 81, v => v === null || v === 'weak' || v === 'shield') || ['weak', 'shield'].some(kind => r.marks.filter((v: string) => v === kind).length !== 3) || !vector(r.puzzleOrder, bank.length, v => integer(v, 0, bank.length - 1)) || new Set(r.puzzleOrder).size !== bank.length) throw new Error('問題の記録が不正です。');
-    if (!relicList(r.inventory) || !relicList(r.pool) || !relicList(r.rewards) || !r.inventory.every((id: string) => r.pool.includes(id)) || !r.rewards.every((id: string) => r.pool.includes(id) && !r.inventory.includes(id)) || (r.phase === 'reward' && r.rewards.length !== 3)) throw new Error('遺物の記録が不正です。');
-    if (!record(r.stats) || !['moves', 'filled', 'bestChain', 'kills', 'skills', 'sheets'].every(k => integer(r.stats[k])) || r.stats.kills > 6 || r.stats.kills !== r.stage + (r.phase === 'reward' || r.phase === 'won' ? 1 : 0)) throw new Error('戦績の記録が不正です。');
+    if (!relicList(r.inventory) || !relicList(r.pool) || !rewardList(r.rewards) || !r.inventory.every((id: string) => r.pool.includes(id)) || !r.rewards.every((id: string) => !relics.has(id) || (r.pool.includes(id) && !r.inventory.includes(id))) || (r.phase === 'reward' && r.rewards.length !== 3)) throw new Error('遺物の記録が不正です。');
+    if (!record(r.stats) || !['moves', 'filled', 'bestChain', 'kills', 'skills', 'sheets'].every(k => integer(r.stats[k])) || r.stats.kills !== r.stage + (r.phase === 'reward' || r.phase === 'won' ? 1 : 0)) throw new Error('戦績の記録が不正です。');
     if ((r.phase === 'battle' && (!r.hp || !r.enemyHp || !r.cells.includes(0))) || (r.phase === 'lost' && r.hp !== 0) || (r.phase === 'won' && r.stage !== 5) || ((r.phase === 'won' || r.phase === 'reward') && (r.enemyHp !== 0 || r.cells.includes(0)))) throw new Error('冒険の進行が不正です。');
     if (r.lastReport !== null) {
       const p = r.lastReport;
@@ -47,6 +50,7 @@ export function parseSave(raw: string): Save {
       }
     }
   }
+  if (data.meta.bestKills === undefined) data.meta.bestKills = Math.max(data.meta.wins ? 6 : 0, r?.stats.kills ?? 0);
   return data as unknown as Save;
 }
 export function loadSave(): { save: Save; warning: string } {
