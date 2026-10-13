@@ -44,6 +44,16 @@ export function chainBonuses(run: Run, skill = false): ChainTrace['bonuses'] {
   return bonuses;
 }
 export const chainCapacity = (run: Run, skill = false): number => chainBonuses(run, skill).reduce((sum, bonus) => sum + bonus.amount, 0);
+/** A sheet keeps the defenses earned while filling it. Derive them from the
+ * board so previews and older saves agree without another persistent counter. */
+export function sheetShield(run: Run): number {
+  // Victory fills remaining cells for presentation, but that sweep earns no defense.
+  const swept = run.phase === 'reward' || run.phase === 'won' ? run.lastReport?.sweep ?? [] : [];
+  const filled = (cell: number) => run.cells[cell] !== 0 && !swept.includes(cell);
+  const marked = run.marks.reduce((sum, mark, cell) => sum + (mark === 'shield' && !run.givens[cell] && filled(cell) ? 6 : 0), 0);
+  const completed = run.inventory.includes('ward') ? UNITS.filter(unit => unit.some(cell => !run.givens[cell]) && unit.every(filled)).length * 3 : 0;
+  return marked + completed;
+}
 function grow(run: Run, report: Report, levels: number): void {
   const before = run.hp;
   run.spellLevel += levels; run.maxHp += levels * 4;
@@ -107,7 +117,7 @@ export function resolveAction(source: Run, action: Action): Run {
     const chain: ChainTrace = { initialAuto: fuel, bonuses, steps: [], stopReason: 'no-target', remainingAuto: fuel };
     const initiallySingle = source.cells.map((value, cell) => !value && candidates(source.cells, cell).length === 1);
     if (!action.skill) run.afterglow = false;
-    let baseDamage = 0, completionDamage = 0, weakDamage = 0, shield = 0, rekindled = false;
+    let baseDamage = 0, completionDamage = 0, weakDamage = 0, rekindled = false;
     const path: FillEvent[] = [];
     const fill = (cell: number, kind: FillEvent['source'], from: number | null, eligibleCells: number[]) => {
       if (run.cells[cell]) throw new Error('同じマスを二度埋めることはできません。');
@@ -122,8 +132,6 @@ export function resolveAction(source: Run, action: Action): Run {
       baseDamage += 10 + (path.length - 1) * 2;
       completionDamage += units.length * (20 + (run.character === 'scribe' ? 10 : 0) + (has('pen') ? 20 : 0));
       if (run.marks[cell] === 'weak') weakDamage += has('lens') ? 20 : 8;
-      if (run.marks[cell] === 'shield') shield += 6;
-      if (has('ward')) shield += units.length * 3;
       const addedAuto = has('rekindle') && units.length && !rekindled ? 3 : 0;
       if (addedAuto) { fuel += addedAuto; rekindled = true; }
       chain.steps.push({
@@ -157,6 +165,7 @@ export function resolveAction(source: Run, action: Action): Run {
     const damage = Math.floor((baseDamage + completionDamage + weakDamage) * multiplier);
     const fullClear = run.cells.every(Boolean);
     const defeated = damage >= run.enemyHp;
+    const shield = sheetShield(run);
     const incoming = incomingAttack(run);
     const received = defeated ? 0 : Math.max(0, incoming - shield);
     const attackScore = Math.floor(damage * (has('gold') ? 1.5 : 1));

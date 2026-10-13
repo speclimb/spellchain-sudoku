@@ -111,3 +111,7 @@
 }
 
 @media(max-width:760px){.endless-track{gap:8px}.endless-track strong{font-size:17px}.endless-track>span{font-size:9px;padding:3px 6px}.endless-track small{font-size:6px;letter-spacing:.1em}.sheet-status{flex-wrap:wrap;row-gap:2px}.spell-growth b{margin-left:5px}.enemy-health>span{font-size:10px}.enemy-health small{font-size:8px}}
+
+.board-legend{flex-wrap:wrap;row-gap:5px}.sheet-ward{display:inline-flex;align-items:center;gap:6px;color:#b5dcf0;background:#193149;border:1px solid #35536b;border-radius:4px;padding:3px 7px}.sheet-ward b{font-size:12px;color:#d2edff;font-variant-numeric:tabular-nums}.sheet-ward small{font-size:8px;color:#98b6cb}
+@media(max-width:760px){.board-legend{column-gap:12px}.sheet-ward{padding:2px 6px;gap:4px;font-size:8px}.sheet-ward b{font-size:10px}.sheet-ward small{font-size:7px}}
+@media(max-width:760px){.command-panel{row-gap:5px}.vitals>div>div:first-child{margin-bottom:7px}.board-legend{margin-top:3px}}

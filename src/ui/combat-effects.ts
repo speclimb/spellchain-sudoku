@@ -134,12 +134,14 @@ export class CombatEffects {
 
     if (!report.defeated) {
       this.position();
+      const ward = document.querySelector('.sheet-ward b');
+      if (ward) ward.textContent = String(report.shield);
       const blocked = report.received === 0;
       const prevented = Math.min(report.incoming, report.shield);
       const strongAttack = report.incoming > enemy.attack;
       this.host.dataset.blocked = String(blocked);
       this.host.dataset.heavy = String(strongAttack);
-      this.phase('counter', blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', blocked ? '0' : `−${report.received}`, prevented ? `盾で ${prevented} 軽減` : '');
+      this.phase('counter', blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', blocked ? '0' : `−${report.received}`, prevented ? `守護で ${prevented} 軽減` : '');
       this.text('.combat-score', '');
       document.querySelector('.app-shell')?.classList.add(blocked ? 'player-blocked' : 'player-struck');
       const health = document.querySelector<HTMLElement>('.vital-health strong');

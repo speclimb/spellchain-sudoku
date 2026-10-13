@@ -11,7 +11,7 @@ export const RELICS: Relic[] = [
   { id: 'echo', name: '共鳴石', symbol: '◈', kind: '連鎖', description: '起点と同じ数字になる空きマスへ1回、無料で飛び火。そこから連鎖を続ける。', unlock: 3 },
   { id: 'rekindle', name: '再燃の輪', symbol: '◎', kind: '連鎖', description: '各手で最初に行・列・区画を完成させると、自動入力回数＋3。', unlock: 6 },
   { id: 'pen', name: '刻印のペン', symbol: '✒', kind: '完成', description: '行・列・区画の完成ダメージ＋20／単位。', unlock: 0 },
-  { id: 'ward', name: '守護の紋章', symbol: '⬡', kind: '守護', description: '完成1単位につき、その手の反撃を追加で3軽減。', unlock: 0 },
+  { id: 'ward', name: '守護の紋章', symbol: '⬡', kind: '守護', description: '行・列・区画の完成1単位につき守護＋3。同じシートでは毎手の反撃を軽減し、次のシートでリセット。', unlock: 0 },
   { id: 'stroke', name: '一筆の杖', symbol: 'Ⅰ', kind: '技巧', description: '3連鎖以内で終わった手の総ダメージを2倍。短い詠唱にも力を。', unlock: 0 },
   { id: 'battery', name: '蓄電石', symbol: '⋈', kind: '魔力', description: '通常入力の手で魔力を追加＋2。最大8。', unlock: 0 },
   { id: 'amplifier', name: '魔力増幅器', symbol: '✵', kind: '魔力', description: 'スキルで始めた手の総ダメージを1.5倍。', unlock: 12 },

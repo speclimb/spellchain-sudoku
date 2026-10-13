@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import bank from '../src/game/puzzles.json';
 import { CHARACTERS, ENEMIES, REPEATABLE_REWARDS, RELICS, characterOf, enemyOf, rewardOf } from '../src/game/content';
-import { chainBonus, chainCapacity, dispatch, incomingAttack, newSave, previewAction, resolveAction, spellMultiplier, startRun } from '../src/game/engine';
+import { chainBonus, chainCapacity, dispatch, incomingAttack, newSave, previewAction, resolveAction, sheetShield, spellMultiplier, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
-import { candidates, countSolutions, singles, solveSingles } from '../src/game/sudoku';
+import { candidates, countSolutions, PEERS, singles, solveSingles, UNITS } from '../src/game/sudoku';
 import type { CharacterId, Run, Save } from '../src/game/types';
 
 function fixture(seed = 20261013, character: CharacterId = 'fuse', clears = 12): Save {
@@ -93,7 +93,7 @@ describe('deterministic actions', () => {
   });
   it('counts simultaneous row/column/box completion once each and applies scribe multiplication correctly', () => {
     const run = fixture(5, 'scribe').run!;
-    run.cells = [...run.solution]; run.cells[40] = 0; run.marks.fill(null); run.mana = 8;
+    run.cells = [...run.solution]; run.cells[40] = 0; run.givens = run.cells.map(Boolean); run.marks.fill(null); run.mana = 8;
     run.inventory = ['pen', 'ward', 'glass', 'amplifier']; run.enemyHp = 400;
     const report = previewAction(run, 40, true);
     expect(report.units).toBe(3);
@@ -149,7 +149,7 @@ describe('deterministic actions', () => {
     expect(run.cells).toEqual(run.solution);
     expect(report.received).toBe(0);
   });
-  it('doubles the third counterattack in stage 3 and the boss, without carrying shields', () => {
+  it('doubles the third counterattack in stage 3 and the boss while retaining defenses within a sheet', () => {
     const run = fixture().run!;
     for (const stage of [2, 5]) {
       run.stage = stage; run.turn = 1;
@@ -160,7 +160,7 @@ describe('deterministic actions', () => {
     const first = resolveAction(run, play(run));
     if (first.phase === 'battle') {
       const second = previewAction(first, singles(first.cells)[0]);
-      expect(second.shield).toBe(second.path.filter(e => e.mark === 'shield').length * 6);
+      expect(second.shield).toBe(sheetShield(first) + second.path.filter(e => e.mark === 'shield').length * 6);
     }
   });
   it('can lose to a counterattack, and never counterattacks after a lethal spell', () => {
@@ -188,6 +188,67 @@ describe('deterministic actions', () => {
 });
 
 describe('progression, rewards and persistence', () => {
+  it('retains earned sheet defenses for disconnected final cells and restores them from existing save fields', () => {
+    const save = fixture(1), run = save.run!;
+    run.stage = 12; run.stats.kills = 12; run.enemyHp = enemyOf(12).hp; run.spellLevel = 30;
+    run.inventory = ['ward']; run.mana = 8;
+    const blanks = run.givens.flatMap((given, cell) => !given && !run.marks[cell] ? [cell] : []);
+    const a = blanks[0], b = blanks.find(cell => cell !== a && !PEERS[a].includes(cell))!;
+    expect(b).toBeDefined(); run.cells = [...run.solution]; run.cells[a] = 0; run.cells[b] = 0;
+    const givenUnits = UNITS.filter(unit => unit.every(cell => run.givens[cell])).length;
+    const beforeShield = 18 + (21 - givenUnits) * 3;
+    expect(sheetShield(run)).toBe(beforeShield);
+    const restored = parseSave(JSON.stringify(save)); expect(restored).toEqual(save);
+    expect(sheetShield(restored.run!)).toBe(beforeShield);
+    const forecast = previewAction(run, a), next = dispatch(restored, play(run, a));
+    expect(forecast.path).toHaveLength(1); expect(forecast.chain!.stopReason).toBe('no-target');
+    expect(forecast.shield).toBe(beforeShield + 9); expect(forecast.incoming).toBe(69); expect(forecast.received).toBe(0);
+    expect(next.run!.lastReport).toEqual(forecast); expect(next.run!.hp).toBe(run.hp);
+    expect(sheetShield(next.run!)).toBe(forecast.shield);
+    const loaded = parseSave(JSON.stringify(next)), finalForecast = previewAction(loaded.run!, b);
+    expect(finalForecast).toMatchObject({ fullClear: true, defeated: false, incoming: 69, received: 0, sheetAdvanced: true });
+    expect(finalForecast.shield).toBe(18 + (27 - givenUnits) * 3);
+    const final = dispatch(loaded, play(loaded.run!, b));
+    expect(final.run!.lastReport).toEqual(finalForecast);
+    expect(final.run!.stage).toBe(run.stage); expect(final.run!.turn).toBe(run.turn + 2);
+    expect(sheetShield(final.run!)).toBe(0); expect(final.run!.sheet).toBe(run.sheet + 1);
+    expect(parseSave(JSON.stringify(final))).toEqual(final);
+    expect(() => dispatch(final, play(loaded.run!, b))).toThrow('すでに処理');
+  });
+  it('keeps shield marks active on later hands without ward and resets them for a new enemy', () => {
+    const save = fixture(11), run = save.run!;
+    const mark = run.marks.findIndex((m, cell) => m === 'shield' && !run.givens[cell]);
+    run.cells[mark] = run.solution[mark];
+    expect(sheetShield(run)).toBe(6);
+    const root = singles(run.cells).find(cell => previewAction(run, cell).path.every(event => event.mark !== 'shield'))!;
+    expect(root).toBeDefined(); const forecast = previewAction(run, root);
+    expect(forecast.shield).toBe(6); expect(forecast.received).toBe(0);
+    run.enemyHp = 1;
+    const reward = dispatch(save, play(run, root));
+    const advanced = dispatch(reward, { type: 'reward', relic: reward.run!.rewards[0], revision: reward.run!.revision });
+    expect(sheetShield(advanced.run!)).toBe(0);
+  });
+  it('does not award ward defenses for units completely supplied as givens', () => {
+    const run = fixture().run!; run.inventory = ['ward']; run.marks.fill(null);
+    run.givens = run.solution.map((_, cell) => cell < 45);
+    run.cells = run.solution.map((value, cell) => run.givens[cell] ? value : 0);
+    expect(UNITS.filter(unit => unit.every(cell => run.givens[cell]))).toHaveLength(8);
+    expect(sheetShield(run)).toBe(0);
+    run.cells = [...run.solution];
+    expect(sheetShield(run)).toBe((27 - 8) * 3);
+  });
+  it('does not award defenses from an enemy victory sweep, including restored reward and legacy won states', () => {
+    const save = fixture(21), run = save.run!;
+    run.inventory = ['ward']; run.mana = 8; run.enemyHp = 1;
+    const next = dispatch(save, play(run, singles(run.cells)[0], true)), defeated = next.run!;
+    expect(defeated.lastReport!.sweep.length).toBeGreaterThan(0); expect(defeated.lastReport!.fullClear).toBe(false);
+    expect(defeated.cells).toEqual(defeated.solution);
+    expect(sheetShield(defeated)).toBe(defeated.lastReport!.shield);
+    expect(sheetShield(parseSave(JSON.stringify(next)).run!)).toBe(defeated.lastReport!.shield);
+    const won = structuredClone(defeated); won.phase = 'won'; won.stage = 5; won.stats.kills = 6;
+    expect(sheetShield(won)).toBe(defeated.lastReport!.shield);
+    expect(sheetShield(parseSave(JSON.stringify({ ...save, run: won })).run!)).toBe(defeated.lastReport!.shield);
+  });
   it('cycles enemy artwork while HP and attacks keep growing beyond all six archetypes', () => {
     expect(enemyOf(0)).toMatchObject({ archetypeIndex: 0, encounter: 1, cycle: 1, hp: 1400, attack: 3, strongEvery: 0 });
     expect(enemyOf(6)).toMatchObject({ archetypeIndex: 0, encounter: 7, cycle: 2, symbol: 'ember', hp: 13500, attack: 9 });
@@ -278,8 +339,8 @@ describe('progression, rewards and persistence', () => {
     expect(previewAction(run, cell, true)).toEqual(forecast);
     const next = dispatch(save, play(run, cell, true)), continued = next.run!;
     expect(continued.lastReport).toEqual(forecast);
-    expect(forecast).toMatchObject({ fullClear: true, defeated: false, sheetAdvanced: true, levelsGained: 1, spellLevelBefore: 1, spellLevelAfter: 2, maxHpGained: 4, healed: 10, incoming: 4, received: 4, sweep: [] });
-    expect(continued).toMatchObject({ stage: 2, phase: 'battle', turn: 2, hp: 36, maxHp: 44, mana: 0, afterglow: true, sheet: 2, encounterSheet: 2, puzzleCursor: 1, spellLevel: 2, rewards: [] });
+    expect(forecast).toMatchObject({ fullClear: true, defeated: false, sheetAdvanced: true, levelsGained: 1, spellLevelBefore: 1, spellLevelAfter: 2, maxHpGained: 4, healed: 10, incoming: 4, received: 0, sweep: [] });
+    expect(continued).toMatchObject({ stage: 2, phase: 'battle', turn: 2, hp: 40, maxHp: 44, mana: 0, afterglow: true, sheet: 2, encounterSheet: 2, puzzleCursor: 1, spellLevel: 2, rewards: [] });
     expect(continued.enemyHp).toBe(run.enemyHp - forecast.damage);
     expect(continued.stats.kills).toBe(2); expect(continued.stats.sheets).toBe(1);
     expect(next.meta.clears).toBe(save.meta.clears); expect(continued.score).toBe(run.score + forecast.attackScore);
@@ -292,10 +353,10 @@ describe('progression, rewards and persistence', () => {
   });
   it('loses to a lethal counterattack on the last cell before healing or advancing', () => {
     const save = fixture(), run = save.run!;
-    run.stage = 5; run.stats.kills = 5; run.enemyHp = ENEMIES[5].hp; run.turn = 2; run.hp = 1;
+    run.stage = 30; run.stats.kills = 30; run.enemyHp = enemyOf(30).hp; run.turn = 2; run.hp = 1;
     const result = dispatch(save, play(run, leaveLastCell(run))).run!;
     expect(result).toMatchObject({ phase: 'lost', hp: 0, spellLevel: 1, sheet: 1, maxHp: 40 });
-    expect(result.lastReport).toMatchObject({ fullClear: true, defeated: false, sheetAdvanced: false, levelsGained: 0, healed: 0, incoming: 12 });
+    expect(result.lastReport).toMatchObject({ fullClear: true, defeated: false, sheetAdvanced: false, levelsGained: 0, healed: 0, incoming: 681, shield: 18, received: 663 });
     expect(result.cells).toEqual(result.solution);
     expect(parseSave(JSON.stringify({ ...save, run: result })).run).toEqual(result);
   });
