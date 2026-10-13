@@ -25,6 +25,7 @@ const demoRun = startRun(newSave(), 'fuse', 21).run!;
 const demoRoot = demoRun.cells.findIndex((n, i) => !n && candidates(demoRun.cells, i).length === 1);
 const demoPath = previewAction(demoRun, demoRoot).path;
 const audio = new IncantationAudio();
+audio.setEnabled(save.settings.sound);
 const fmt = (n: number) => n.toLocaleString('ja-JP');
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const activeRun = () => save.run && (save.run.phase === 'battle' || save.run.phase === 'reward');
@@ -77,7 +78,7 @@ function result(run: Run): string {
 }
 function modalBody(): string | null {
   if (modal === 'help') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">HOW TO PLAY</div><h2>数字をつなぎ、魔法を紡ぐ。</h2><ol class="help-steps"><li><strong>青緑の数字から、起点を選ぶ</strong><p>候補が1つのマスだけが光ります。どれも正解なので、数字を推測する必要はありません。</p></li><li><strong>予告を見比べて、詠唱する</strong><p>「連鎖のしくみ」で1マスずつ確認できます。直前に埋めたマスと同じ行・列・3×3区画にある確定マスへ進みます。最初から確定していたマスも対象です。縦の距離＋横の距離が近い順、同距離なら上の行・左の列を優先します。</p></li><li><strong>術式が育つほど、連鎖も長くなる</strong><p>Lv.1の導火術師は起点1＋自動4で最大5連鎖。レベルが1上がるたび、自動入力がさらに1回増えます。たとえばLv.10では通常最大14連鎖、スキルで最大18連鎖。残り回数が0か、直前のマスからつながる確定マスがなくなると終了。1マス埋まるたびに候補を計算し直します。遺物で回数や飛び先が増えることもあります。</p></li><li><strong>完成・弱点・盾を狙う</strong><p>行・列の完成は光の奔流、3×3区画の完成は魔法陣のカットインと追加攻撃。✧は弱点、◇は守護＋6。守護は同じシートの間ずっと蓄積し、毎回の反撃を軽減します。残り数マスになっても消えません。敵が生き残ると、連鎖の後に反撃します。</p></li><li><strong>魔力が8たまったら固有スキル</strong><p>未確定の空きマスからも始動できます。スキルの手は充電されません。</p></li><li><strong>シートを重ね、どこまでも連戦</strong><p>盤面を完成させても敵が生きていれば、蓄積した守護で反撃を受けてから次のシートへ。守護は次のシートで0に戻り、敵のHP、魔力、反撃の周期は引き継がれます。シート完成と敵撃破で術式レベルが1ずつ上がり、自動入力＋1回、攻撃倍率＋0.2、最大HP＋4、HPを最大10回復。敵撃破で残りの盤面を一掃し、3択で新しい力を選びます。遺物が少なくなると、修練・最大HP強化・全回復も出現。6戦ごとに敵がさらに強くなり、HPが尽きるまで連戦は続きます。一掃はシート完成の成長・得点・充電の対象外です。</p></li></ol><p class="help-note">時間制限はありません。PCでは矢印キーでマスを移動し、Enterで選択できます。入力は「詠唱する」で確定します。</p>`;
-  if (modal === 'settings') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">PREFERENCES</div><h2>詠唱のひとときを整える。</h2><div class="settings-list">${[{ key: 'sound', name: '連鎖の音', text: '連鎖・攻撃・防御に合わせて音が鳴ります。' }, { key: 'fast', name: '演出を短く', text: '連鎖・魔法カットイン・反撃・シート切替を短縮します。' }, { key: 'reducedMotion', name: '動きを抑える', text: '揺れや閃光を止め、攻撃と成長を文字で表示します。' }].map(s => `<label><span><strong>${s.name}</strong><small>${s.text}</small></span><input type="checkbox" data-setting="${s.key}" ${save.settings[s.key as keyof typeof save.settings] ? 'checked' : ''}></label>`).join('')}</div><p class="help-note">進行はこのブラウザに自動保存されます。別の端末とは共有されません。サイトデータを削除すると記録も消えます。</p>`;
+  if (modal === 'settings') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">PREFERENCES</div><h2>詠唱のひとときを整える。</h2><div class="settings-list">${[{ key: 'sound', name: '効果音', text: '操作・魔法・打撃・防御・成長を異なる音で演出します。' }, { key: 'fast', name: '演出を短く', text: '連鎖・魔法カットイン・反撃・シート切替を短縮します。' }, { key: 'reducedMotion', name: '動きを抑える', text: '揺れや閃光を止め、攻撃と成長を文字で表示します。' }].map(s => `<label><span><strong>${s.name}</strong><small>${s.text}</small></span><input type="checkbox" data-setting="${s.key}" ${save.settings[s.key as keyof typeof save.settings] ? 'checked' : ''}></label>`).join('')}</div><p class="help-note">進行はこのブラウザに自動保存されます。別の端末とは共有されません。サイトデータを削除すると記録も消えます。</p><p class="help-note">効果音素材：Kenney / JaggedStone（CC0）。<a href="./audio-licenses/CREDITS.txt" target="_blank" rel="noopener">出典とライセンス</a></p>`;
   if (modal === 'codex') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">THE RELIC ARCHIVE</div><h2>詠唱を変える、十二の遺物。</h2><p class="modal-intro">累計 ${save.meta.clears} 戦クリア · 解放した遺物は次の冒険から出現します。</p><div class="codex-grid">${RELICS.map(r => `<article class="codex-item ${r.unlock > save.meta.clears ? 'locked' : ''}"><span>${r.symbol}</span><div><small>${r.kind}</small><h3>${r.name}</h3><p>${r.description}</p>${r.unlock > save.meta.clears ? `<b>累計${r.unlock}戦クリアで解放</b>` : '<b class="unlocked">解放済み</b>'}</div></article>`).join('')}</div>`;
   if (modal === 'restart') return `<div class="modal-eyebrow">A NEW JOURNEY</div><h2>新しい冒険をはじめますか？</h2><p class="modal-intro">今の冒険の進行は置き換わります。これまでの戦績と解放した要素は残ります。</p><div class="dialog-actions"><button class="secondary" data-action="close">戻る</button><button class="primary" data-action="restart">新しい冒険をはじめる ↗</button></div>`;
   if (view === 'battle' && save.run?.phase === 'reward') return reward(save.run);
@@ -128,6 +129,7 @@ function select(cell: number): void {
   const run = save.run;
   if (!run || run.phase !== 'battle' || run.cells[cell]) return;
   if (!skill && candidates(run.cells, cell).length !== 1) { feedback = 'このマスはまだ未確定です。青緑の枠の数字を選ぶか、固有スキルを使いましょう。'; render(); return; }
+  if (save.settings.sound) { audio.unlock(); audio.ui('select'); }
   selected = cell; prediction = previewAction(run, cell, skill); guideIndex = 0; feedback = ''; render();
 }
 async function cast(): Promise<void> {
@@ -143,21 +145,37 @@ async function cast(): Promise<void> {
     persistNow(); busy = true; guideOpen = false; render(before);
     effects = new CombatEffects(save.settings, audio);
     const report = save.run!.lastReport!;
+    if (save.settings.sound) audio.cast();
     await board!.animate(before, save.run!, report, save.settings, (n, complete) => audio.note(n, complete), event => effects!.fill(event));
     await effects.finish(before, save.run!, report);
     feedback = report.defeated ? '' : `${report.path.length}連鎖、${fmt(report.damage)}ダメージ、得点 ＋${fmt(report.attackScore)}。${report.received ? `反撃でHP −${report.received}。` : '反撃を防ぎました。'}${report.sheetAdvanced ? `シート完成！ 守護をリセットして次のシートへ。術式 Lv.${save.run!.spellLevel}、自動＋${chainBonus(save.run!.spellLevel)}回、攻撃 ×${spellMultiplier(save.run!.spellLevel).toFixed(1)}。` : stopText(report)}`;
   } catch (error) { feedback = error instanceof Error ? error.message : '詠唱を完了できませんでした。'; }
   finally { effects?.destroy(); busy = false; selected = null; prediction = null; skill = false; render(); }
 }
+function setSound(enabled: boolean): void {
+  save.settings.sound = enabled;
+  audio.setEnabled(enabled);
+  if (enabled) { audio.unlock(); audio.ui('confirm'); }
+  persistNow();
+  const button = app.querySelector<HTMLButtonElement>('[data-action="sound"]');
+  if (button) { button.textContent = enabled ? '♪' : '♫̸'; button.setAttribute('aria-label', enabled ? '消音する' : '音をオンにする'); }
+}
 app.addEventListener('click', event => {
-  if (busy) return;
   const element = (event.target as HTMLElement).closest<HTMLElement>('button');
   if (!element || element.hasAttribute('disabled')) return;
+  // Muting stays available during the committed animation; keep its DOM intact.
+  if (element.dataset.action === 'sound') { setSound(!save.settings.sound); return; }
+  if (busy) return;
+  if (save.settings.sound) audio.unlock();
   if (element.dataset.cell !== undefined) { if (!guideOpen) return select(Number(element.dataset.cell)); return; }
-  if (element.dataset.character) { chosen = element.dataset.character as CharacterId; render(); return; }
+  if (element.dataset.character) { if (save.settings.sound) audio.ui('select'); chosen = element.dataset.character as CharacterId; render(); return; }
   if (element.dataset.reward && save.run) {
     save = dispatch(save, { type: 'reward', relic: element.dataset.reward as RewardId, revision: save.run.revision });
+    if (save.settings.sound) audio.ui('reward');
     guideOpen = false; guideIndex = 0; selected = null; prediction = null; skill = false; feedback = ''; persistNow(); render(); window.scrollTo({ top: 0 }); return;
+  }
+  if (element.dataset.action && element.dataset.action !== 'cast' && save.settings.sound) {
+    audio.ui(['new', 'restart', 'resume', 'skill'].includes(element.dataset.action) ? 'confirm' : 'select');
   }
   switch (element.dataset.action) {
     case 'new': if (activeRun()) { modal = 'restart'; render(); } else begin(); break;
@@ -166,7 +184,6 @@ app.addEventListener('click', event => {
     case 'home': case 'result-home': guideOpen = false; view = 'home'; modal = null; selected = null; prediction = null; skill = false; render(); break;
     case 'help': case 'settings': case 'codex': modal = element.dataset.action; render(); break;
     case 'close': modal = null; render(); break;
-    case 'sound': save.settings.sound = !save.settings.sound; if (save.settings.sound) { audio.unlock(); audio.note(1); } persistNow(); render(); break;
     case 'tutorial-close': tutorialHidden = true; save.meta.tutorialDone = true; persistNow(); render(); break;
     case 'skill':
       if (save.run?.mana === 8) { guideOpen = false; guideIndex = 0; skill = !skill; prediction = null; selected = null; feedback = skill ? '任意の空きマスを選んで、固有スキルの起点にできます。' : ''; render(); }
@@ -189,8 +206,12 @@ app.addEventListener('click', event => {
 app.addEventListener('change', event => {
   const element = event.target as HTMLInputElement;
   if (!element.dataset.setting) return;
-  save.settings[element.dataset.setting as keyof typeof save.settings] = element.checked;
-  if (save.settings.sound) audio.unlock(); persistNow();
+  if (element.dataset.setting === 'sound') setSound(element.checked);
+  else {
+    save.settings[element.dataset.setting as keyof typeof save.settings] = element.checked;
+    if (save.settings.sound) { audio.unlock(); audio.ui('select'); }
+    persistNow();
+  }
   document.documentElement.classList.toggle('reduced-motion', save.settings.reducedMotion);
 });
 app.addEventListener('keydown', event => {
@@ -216,3 +237,5 @@ app.addEventListener('keydown', event => {
 render();
 
 matchMedia('(min-width: 761px)').addEventListener('change', () => { if (!busy && view === 'battle') render(); });
+window.addEventListener('pagehide', event => { if (event.persisted) audio.setEnabled(false); else audio.dispose(); });
+window.addEventListener('pageshow', event => { if (event.persisted) audio.setEnabled(save.settings.sound); });

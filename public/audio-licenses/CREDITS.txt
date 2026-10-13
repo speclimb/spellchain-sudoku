@@ -1,0 +1,44 @@
+連鎖詠唱ナンプレ — 効果音クレジット
+
+外部効果音12点はCC0 1.0 Universalの素材を使用しています。
+音源を短く編集し、モノラル化・音量調整・フェード処理・MP3変換を行いました。
+配布元のライセンス表示確認・取得日: 2026-10-13
+
+Kenney — Interface Sounds 1.0 / Impact Sounds 1.0
+https://kenney.nl/assets/interface-sounds
+https://kenney.nl/assets/impact-sounds
+同梱の原文: Kenney-Interface.txt / Kenney-Impact.txt
+
+JaggedStone — Magic Spell SFX
+https://opengameart.org/content/magic-spell-sfx
+配布ページのLicense: CC0 / Copyright・Attribution Notice: None needed
+
+CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/
+ライセンス原文: CC0-1.0.txt
+
+ui-select.mp3 ← Kenney / interface/Audio/click_001.ogg
+配布元: https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip
+ui-confirm.mp3 ← Kenney / interface/Audio/confirmation_002.ogg
+配布元: https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip
+ui-reward.mp3 ← Kenney / interface/Audio/confirmation_004.ogg
+配布元: https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip
+hit-light.mp3 ← Kenney / impact/Audio/impactPunch_medium_001.ogg
+配布元: https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip
+hit-heavy.mp3 ← Kenney / impact/Audio/impactPunch_heavy_002.ogg
+配布元: https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip
+shield.mp3 ← Kenney / impact/Audio/impactMetal_light_002.ogg
+配布元: https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip
+spell-line.mp3 ← JaggedStone / magical_1.ogg
+配布元: https://opengameart.org/sites/default/files/magical_1_0.ogg
+spell-box.mp3 ← JaggedStone / magical_2.ogg
+配布元: https://opengameart.org/sites/default/files/magical_2.ogg
+spell-cross.mp3 ← JaggedStone / magical_3.ogg
+配布元: https://opengameart.org/sites/default/files/magical_3.ogg
+sheet-clear.mp3 ← JaggedStone / magical_4.ogg
+配布元: https://opengameart.org/sites/default/files/magical_4.ogg
+growth.mp3 ← JaggedStone / magical_6.ogg
+配布元: https://opengameart.org/sites/default/files/magical_6.ogg
+cast.mp3 ← JaggedStone / magical_7.ogg
+配布元: https://opengameart.org/sites/default/files/magical_7.ogg
+
+連鎖の音階と音源読み込み失敗時の代替音は、このゲームのWeb Audio合成です。

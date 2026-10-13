@@ -161,6 +161,7 @@ export class CombatEffects {
     if ((report.levelsGained ?? 0) > 0) {
       const chainGained = chainBonus(after.spellLevel) - chainBonus(report.spellLevelBefore ?? before.spellLevel);
       this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 自動連鎖 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 回復 +${report.healed}`);
+      if (this.settings.sound) this.audio.growth();
       await pause(this.duration(340));
     }
   }
