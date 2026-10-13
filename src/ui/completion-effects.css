@@ -166,3 +166,54 @@
   .completion-veil, .completion-beam, .completion-streaks, .completion-seal { display: none; }
   .completion-copy { animation: none; background: #101b30f5; border: 1px solid #d9b981a8; border-radius: 4px; text-shadow: none; }
 }
+
+/* A single, bounded finale for completing a fresh sheet in one cast. */
+.combat-effects[data-phase="one-cast"] {
+  --fx-color: #fff2ca;
+  --fx-soft: #cbb0ff88;
+}
+.combat-effects[data-phase="one-cast"] .combat-chain { display: none; }
+.combat-effects[data-phase="one-cast"] .combat-number,
+.combat-effects[data-phase="one-cast"] .combat-shield { display: block; }
+.combat-effects[data-phase="one-cast"] .combat-readout {
+  width: min(540px, 94vw);
+  animation: one-cast-reveal 620ms cubic-bezier(.2,.7,.2,1) both;
+}
+.combat-effects[data-phase="one-cast"] .combat-caption {
+  border-color: #eed6a1;
+  background: #201d3cf2;
+  color: #fff1c8;
+  font-size: clamp(21px, 4.4vw, 34px);
+  padding: 10px 20px;
+  letter-spacing: .09em;
+}
+.combat-effects[data-phase="one-cast"] .combat-number {
+  font: 600 clamp(28px, 5.5vw, 42px)/1.4 var(--serif);
+}
+.combat-effects[data-phase="one-cast"] .combat-shield {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #ecddff;
+  border-color: #bca3dc99;
+  padding: 8px 16px;
+}
+.combat-effects[data-phase="one-cast"] .combat-halo {
+  border-width: 4px;
+  outline: 1px solid #ffecc680;
+  outline-offset: 15px;
+  animation: burst-ring 620ms ease-out both;
+}
+.combat-effects[data-phase="one-cast"] .combat-rays { animation: burst-rays 620ms ease-out both; }
+.combat-effects[data-phase="one-cast"] .combat-vignette {
+  background: radial-gradient(ellipse at 50% 42%, transparent 15%, #c58ee220 55%, #e6c37944);
+  animation: gold-impact 620ms ease-out both;
+}
+@keyframes one-cast-reveal {
+  from { opacity: .1; transform: translate(-50%, -50%) scale(.84); }
+  30% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.combat-effects.fx-still[data-phase="one-cast"] .combat-readout { animation: none; }
+@media (max-width: 760px) {
+  .combat-effects[data-phase="one-cast"] .combat-shield { font-size: 10px; padding: 7px 10px; }
+}

@@ -35,7 +35,7 @@ async function lateSheet(page: Page, remaining: 1 | 2, ward: boolean): Promise<{
     save.meta.clears = 8;
     save.meta.tutorialDone = true;
     const run = save.run;
-    run.stage = 8;
+    run.stage = 8; run.balanceVersion = 1;
     run.stats.kills = 8;
     run.turn = 2; // The next attack is the third-turn heavy counter.
     run.sheet = 9;
@@ -43,7 +43,7 @@ async function lateSheet(page: Page, remaining: 1 | 2, ward: boolean): Promise<{
     run.spellLevel = 30;
     run.maxHp = 156;
     run.hp = ward ? 5 : 156;
-    run.enemyHp = enemyOf(run.stage).hp;
+    run.enemyHp = enemyOf(run.stage, run.balanceVersion).hp;
     if (ward) run.inventory = ['ward'];
     const empty = run.cells.flatMap((value: number, cell: number) => !value && run.marks[cell] !== 'shield' ? [cell] : []);
     const cell = empty[0];
@@ -53,7 +53,7 @@ async function lateSheet(page: Page, remaining: 1 | 2, ward: boolean): Promise<{
     run.cells[cell] = 0;
     if (nextCell !== null) run.cells[nextCell] = 0;
     run.stats.filled = 36 - remaining;
-    run.stats.moves = 2;
+    run.stats.moves = 2; run.castCounter = 2;
     const report = previewAction(run, cell);
     if (report.path.length !== 1 || report.defeated) throw new Error('Late-sheet fixture must have one actual link and a surviving enemy');
     localStorage.setItem(key, JSON.stringify(save));
@@ -220,12 +220,12 @@ test('level forty fills all thirty-six original blanks in one legal cast, counte
       save.meta.tutorialDone = true;
       save.meta.clears = 15;
       const run = save.run;
-      run.stage = 15;
+      run.stage = 15; run.balanceVersion = 1;
       run.stats.kills = 15;
       run.spellLevel = 40;
       run.maxHp = 196;
       run.hp = 196;
-      run.enemyHp = enemyOf(run.stage).hp;
+      run.enemyHp = enemyOf(run.stage, run.balanceVersion).hp;
       run.sheet = 16;
       run.puzzleCursor = 15;
       run.inventory = ['ward'];

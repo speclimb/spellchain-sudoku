@@ -183,6 +183,7 @@ test('exhausted relic pool offers repeatable growth and advances to another play
     save.meta.tutorialDone = true;
     save.settings.reducedMotion = true;
     save.run.inventory = [...save.run.pool];
+    save.run.acquisitionRank.trinity = 3;
     save.run.maxHp -= 8;
     save.run.hp = save.run.maxHp;
     save.run.enemyHp = 1;

@@ -161,21 +161,23 @@ class BoardScene extends Phaser.Scene {
   }
   finale(report: Report, fast: boolean): void {
     if (!this.ready || (!report.fullClear && !report.defeated && report.path.length < 6)) return;
+    const completeStrength = report.oneCastClear ? 1 : Math.min(0.8, report.clearRatio ?? 0.25);
     const color = chainColor(report.path.length), ring = this.effect().setPosition(300, 300);
-    ring.lineStyle(report.fullClear ? 7 : 4, color, 0.95).strokeCircle(0, 0, 65);
+    ring.lineStyle(report.fullClear ? 3 + completeStrength * 4 : 4, color, 0.8).strokeCircle(0, 0, 65);
     ring.lineStyle(2, 0xfff4db, 0.75).strokeCircle(0, 0, 78);
     for (let i = 0; i < 12; i++) {
       const angle = i * Math.PI / 6;
       ring.lineStyle(3, color, 0.8).lineBetween(Math.cos(angle) * 88, Math.sin(angle) * 88, Math.cos(angle) * 108, Math.sin(angle) * 108);
     }
-    this.fade(ring, fast ? 260 : 440, { scaleX: 4, scaleY: 4 });
+    const expansion = report.fullClear ? 2.5 + completeStrength * 1.5 : 4;
+    this.fade(ring, fast ? 260 : 440, { scaleX: expansion, scaleY: expansion });
     if (report.fullClear) {
       const border = this.effect();
-      border.lineStyle(7, 0xffdc8c, 0.9).strokeRoundedRect(8, 8, 584, 584, 8);
-      border.lineStyle(2, 0xfff6df, 1).strokeRoundedRect(17, 17, 566, 566, 6);
+      border.lineStyle(3 + completeStrength * 4, 0xffdc8c, 0.4 + completeStrength * 0.5).strokeRoundedRect(8, 8, 584, 584, 8);
+      border.lineStyle(2, 0xfff6df, 0.4 + completeStrength * 0.6).strokeRoundedRect(17, 17, 566, 566, 6);
       this.fade(border, fast ? 300 : 550);
     }
-    if (report.path.length >= 8 || report.fullClear) this.cameras.main.shake(fast ? 100 : 160, report.fullClear ? 0.004 : 0.0025);
+    if (report.path.length >= 8 || report.oneCastClear) this.cameras.main.shake(fast ? 100 : 160, report.oneCastClear ? 0.004 : 0.0025);
   }
   sweep(cells: number[], fast: boolean): void {
     if (!this.ready || !cells.length) return;

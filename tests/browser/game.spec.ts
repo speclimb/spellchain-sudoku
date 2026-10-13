@@ -31,6 +31,7 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     const { dispatch, newSave, startRun } = await import(/* @vite-ignore */ enginePath);
     const { singles } = await import(/* @vite-ignore */ sudokuPath);
     let save = startRun(newSave(), 'fuse', 21);
+    save.run.pool = save.run.pool.filter((id: string) => id !== 'trinity');
     save.meta.tutorialDone = true;
     save.settings.reducedMotion = true;
     for (let encounter = 0; encounter < 5; encounter++) {
@@ -74,7 +75,11 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     const { previewAction } = await import(/* @vite-ignore */ enginePath);
     const { singles } = await import(/* @vite-ignore */ sudokuPath);
     const save = JSON.parse(localStorage.getItem(key)!);
-    save.run.hp = 1;
+    save.run.hp = 1; save.run.turn = 2;
+    // Keep the real encounter-8 strong attack, but remove Ward from this loss
+    // fixture: the softer curve lets an intact defensive build block every root.
+    save.run.inventory = save.run.inventory.filter((id: string) => id !== 'ward');
+    delete save.run.acquisitionRank.ward; delete save.run.tier.ward;
     for (const cell of singles(save.run.cells)) {
       const report = previewAction(save.run, cell);
       if (!report.defeated && !report.fullClear && report.received > 0) {
@@ -120,7 +125,7 @@ test('mobile: readable board, touch targets, settings, codex and persistent sele
   const cast = await page.locator('[data-action="cast"]').boundingBox();
   expect(cast!.y + cast!.height).toBeLessThanOrEqual(844);
   await page.getByRole('button', { name: '遺物図鑑' }).click();
-  await expect(page.locator('.codex-item')).toHaveCount(12);
+  await expect(page.locator('.codex-item')).toHaveCount(13);
   await page.getByRole('button', { name: '閉じる', exact: true }).click();
   await page.getByRole('button', { name: '設定', exact: true }).click();
   await page.getByLabel('演出を短く').check();

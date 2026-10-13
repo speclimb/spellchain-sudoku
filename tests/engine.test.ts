@@ -27,7 +27,7 @@ function informedAction(run: Run) {
 }
 function informedReward(run: Run) {
   if (run.rewards.includes('recovery') && run.hp < run.maxHp * 0.65) return { type: 'reward' as const, relic: 'recovery' as const, revision: run.revision };
-  const preference = ['ward', 'wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'amplifier', 'battery', 'afterglow', 'stroke', 'training', 'vitality', 'recovery', 'gold'];
+  const preference = ['skill-upgrade', 'greater:stroke', 'greater:trinity', 'ward', 'wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'amplifier', 'battery', 'afterglow', 'stroke', 'trinity', 'training', 'vitality', 'recovery', 'gold'];
   const relic = [...run.rewards].sort((a, b) => preference.indexOf(a) - preference.indexOf(b))[0];
   return { type: 'reward' as const, relic, revision: run.revision };
 }
@@ -75,7 +75,7 @@ describe('deterministic actions', () => {
   it('makes preview identical to execution, without changing state or the random stream', () => {
     for (const character of CHARACTERS) {
       const run = fixture(71, character.id).run!;
-      run.inventory = RELICS.map(r => r.id); run.maxHp = 32; run.hp = 32; run.mana = 8;
+      run.inventory = RELICS.filter(r => r.id !== 'trinity').map(r => r.id); run.maxHp = 32; run.hp = 32; run.mana = 8;
       const before = JSON.stringify(run);
       for (const cell of singles(run.cells)) {
         for (const skill of [false, true]) {
@@ -98,7 +98,9 @@ describe('deterministic actions', () => {
     const report = previewAction(run, 40, true);
     expect(report.units).toBe(3);
     expect(report.shield).toBe(9);
-    expect(report.damage).toBe(Math.floor((10 + 3 * (20 + 10 + 20) * 3) * 1.25 * 1.5));
+    const base = Math.floor((10 + 3 * (20 + 10 + 20) * 3) * 1.25 * 1.5);
+    expect(report.baseDamage).toBe(base); expect(report.clearBonus).toBe(Math.floor(base * .25));
+    expect(report.damage).toBe(base + Math.floor(base * .25));
     expect(report.fullClear).toBe(true);
     expect(report.defeated).toBe(true);
     expect(report.received).toBe(0);
@@ -151,7 +153,7 @@ describe('deterministic actions', () => {
   });
   it('doubles the third counterattack in stage 3 and the boss while retaining defenses within a sheet', () => {
     const run = fixture().run!;
-    for (const stage of [2, 5]) {
+    for (const stage of [2, 4, 9]) {
       run.stage = stage; run.turn = 1;
       const normal = incomingAttack(run); run.turn = 2;
       expect(incomingAttack(run)).toBe(normal * 2);
@@ -202,11 +204,11 @@ describe('progression, rewards and persistence', () => {
     expect(sheetShield(restored.run!)).toBe(beforeShield);
     const forecast = previewAction(run, a), next = dispatch(restored, play(run, a));
     expect(forecast.path).toHaveLength(1); expect(forecast.chain!.stopReason).toBe('no-target');
-    expect(forecast.shield).toBe(beforeShield + 9); expect(forecast.incoming).toBe(69); expect(forecast.received).toBe(0);
+    expect(forecast.shield).toBe(beforeShield + 9); expect(forecast.incoming).toBe(enemyOf(12).attack); expect(forecast.received).toBe(0);
     expect(next.run!.lastReport).toEqual(forecast); expect(next.run!.hp).toBe(run.hp);
     expect(sheetShield(next.run!)).toBe(forecast.shield);
     const loaded = parseSave(JSON.stringify(next)), finalForecast = previewAction(loaded.run!, b);
-    expect(finalForecast).toMatchObject({ fullClear: true, defeated: false, incoming: 69, received: 0, sheetAdvanced: true });
+    expect(finalForecast).toMatchObject({ fullClear: true, defeated: false, incoming: enemyOf(12).attack, received: 0, sheetAdvanced: true });
     expect(finalForecast.shield).toBe(18 + (27 - givenUnits) * 3);
     const final = dispatch(loaded, play(loaded.run!, b));
     expect(final.run!.lastReport).toEqual(finalForecast);
@@ -249,16 +251,16 @@ describe('progression, rewards and persistence', () => {
     expect(sheetShield(won)).toBe(defeated.lastReport!.shield);
     expect(sheetShield(parseSave(JSON.stringify({ ...save, run: won })).run!)).toBe(defeated.lastReport!.shield);
   });
-  it('cycles enemy artwork while HP and attacks keep growing beyond all six archetypes', () => {
+  it('cycles enemy artwork and every-fifth bosses while HP and attacks keep growing', () => {
     expect(enemyOf(0)).toMatchObject({ archetypeIndex: 0, encounter: 1, cycle: 1, hp: 1400, attack: 3, strongEvery: 0 });
-    expect(enemyOf(6)).toMatchObject({ archetypeIndex: 0, encounter: 7, cycle: 2, symbol: 'ember', hp: 13500, attack: 9 });
-    expect(enemyOf(17)).toMatchObject({ archetypeIndex: 5, encounter: 18, cycle: 3, symbol: 'dragon', strongEvery: 3 });
+    expect(enemyOf(6)).toMatchObject({ archetypeIndex: 1, encounter: 7, cycle: 2, symbol: 'wing', hp: 9700, attack: 6 });
+    expect(enemyOf(19)).toMatchObject({ archetypeIndex: 5, encounter: 20, cycle: 4, symbol: 'dragon', strongEvery: 3 });
     for (let stage = 1; stage < 60; stage++) {
       expect(enemyOf(stage).hp).toBeGreaterThan(enemyOf(stage - 1).hp);
       expect(enemyOf(stage).attack).toBeGreaterThanOrEqual(enemyOf(stage - 1).attack);
     }
     expect(enemyOf(30).hp / enemyOf(20).hp).toBeGreaterThan(spellMultiplier(30) / spellMultiplier(20));
-    const run = fixture().run!; run.stage = 17; run.turn = 1;
+    const run = fixture().run!; run.stage = 19; run.turn = 1;
     const normal = incomingAttack(run); run.turn = 2;
     expect(incomingAttack(run)).toBe(normal * 2);
   });
@@ -282,7 +284,7 @@ describe('progression, rewards and persistence', () => {
   it('keeps offering deterministic repeatable rewards as the unique relic pool runs out', () => {
     for (const missing of [2, 1, 0]) {
       const save = fixture(43), run = save.run!;
-      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); run.enemyHp = 1;
+      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); run.acquisitionRank.trinity = 3; run.enemyHp = 1;
       const next = dispatch(save, play(run));
       expect(next.run!.phase).toBe('reward'); expect(next.run!.stats.kills).toBe(13);
       expect(next.run!.rewards).toHaveLength(3); expect(new Set(next.run!.rewards).size).toBe(3);
@@ -356,7 +358,7 @@ describe('progression, rewards and persistence', () => {
     run.stage = 30; run.stats.kills = 30; run.enemyHp = enemyOf(30).hp; run.turn = 2; run.hp = 1;
     const result = dispatch(save, play(run, leaveLastCell(run))).run!;
     expect(result).toMatchObject({ phase: 'lost', hp: 0, spellLevel: 1, sheet: 1, maxHp: 40 });
-    expect(result.lastReport).toMatchObject({ fullClear: true, defeated: false, sheetAdvanced: false, levelsGained: 0, healed: 0, incoming: 681, shield: 18, received: 663 });
+    expect(result.lastReport).toMatchObject({ fullClear: true, defeated: false, sheetAdvanced: false, levelsGained: 0, healed: 0, incoming: 73, shield: 18, received: 55 });
     expect(result.cells).toEqual(result.solution);
     expect(parseSave(JSON.stringify({ ...save, run: result })).run).toEqual(result);
   });
@@ -378,7 +380,7 @@ describe('progression, rewards and persistence', () => {
     run.stage = 5; run.stats.kills = 5;
     const firstDeck = [...run.puzzleOrder], sources = [run.puzzleOrder[run.puzzleCursor]];
     for (let sheet = 1; sheet <= 32; sheet++) {
-      run.enemyHp = ENEMIES[5].hp;
+      run.enemyHp = enemyOf(run.stage).hp;
       const cell = leaveLastCell(run), before = structuredClone(run), forecast = previewAction(run, cell);
       const next = resolveAction(run, play(run, cell));
       expect(run).toEqual(before); expect(next.lastReport).toEqual(forecast); expect(next.lastReport!.sheetAdvanced).toBe(true);
@@ -415,12 +417,12 @@ describe('progression, rewards and persistence', () => {
   });
   it('unlocks by cumulative clears and freezes the relic pool for the current run', () => {
     const save = fixture(13, 'fuse', 2); save.run!.enemyHp = 1;
-    expect(save.run!.pool).toHaveLength(9);
+    expect(save.run!.pool).toHaveLength(10);
     const next = dispatch(save, play(save.run!));
     expect(next.meta.clears).toBe(3); expect(next.run!.pool).not.toContain('echo');
     expect(startRun(next, 'scribe', 2).run!.pool).toContain('echo');
     expect(() => startRun(next, 'lumen', 2)).toThrow();
-    expect(fixture(1, 'lumen', 12).run!.pool).toHaveLength(12);
+    expect(fixture(1, 'lumen', 12).run!.pool).toHaveLength(13);
   });
   it('offers three distinct unowned relics with an affinity option when available', () => {
     for (const c of CHARACTERS) {
@@ -479,11 +481,12 @@ describe('progression, rewards and persistence', () => {
     mkdirSync('.runtime', { recursive: true });
     writeFileSync('.runtime/balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
   }, 60000);
-  it('lets each unlocked character reach long chains before enemy inflation outgrows the run', () => {
+  it('lets every character reach long chains without Trinity before enemy inflation outgrows the run', () => {
     const results: { character: CharacterId; seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; encounters: EncounterSample[] }[] = [];
     for (const character of CHARACTERS) {
       for (let seed = 21; seed <= 24; seed++) {
         let save = fixture(seed, character.id, 12);
+        save.run!.pool = save.run!.pool.filter(id => id !== 'trinity');
         const encounters: EncounterSample[] = [];
         while (save.run!.phase === 'battle' || save.run!.phase === 'reward') {
           const run = save.run!;
@@ -500,6 +503,6 @@ describe('progression, rewards and persistence', () => {
       }
     }
     mkdirSync('.runtime', { recursive: true });
-    writeFileSync('.runtime/character-balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with unlocked relics and ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
+    writeFileSync('.runtime/character-balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play, Trinity excluded from every character pool, ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
   }, 60000);
 });

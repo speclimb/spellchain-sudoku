@@ -172,6 +172,19 @@ export class IncantationAudio {
       this.tone(frequency, time + i * 0.04, 0.4, 0.044, 'triangle');
     }
   }
+  oneCastClear(): void {
+    if (!this.allowCue('one-cast-clear', 0.5)) return;
+    // One bounded fanfare, using existing licensed assets and tracked voices.
+    // Muting stops even the notes scheduled a few milliseconds ahead.
+    this.sample('sheet-clear', 0.32, 0.94);
+    const context = this.playingContext()!;
+    const time = context.currentTime;
+    this.tone(130.81, time, 0.52, 0.07, 'sine', 65.4);
+    for (const [i, frequency] of [523.25, 659.25, 783.99, 1046.5].entries()) {
+      this.tone(frequency, time + i * 0.045, 0.48, 0.037, 'triangle');
+    }
+    this.tone(1567.98, time + 0.16, 0.48, 0.019);
+  }
   ui(kind: 'select' | 'confirm' | 'reward'): void {
     if (!this.allowCue(`ui-${kind}`, kind === 'select' ? 0.045 : 0.1, kind !== 'select')) return;
     if (this.sample(`ui-${kind}`, kind === 'select' ? 0.22 : 0.27)) return;

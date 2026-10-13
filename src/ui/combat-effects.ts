@@ -59,7 +59,7 @@ export class CombatEffects {
     this.position();
     this.host.dataset.intensity = event.ordinal >= 8 ? 'high' : event.ordinal >= 4 ? 'medium' : 'low';
     this.text('.combat-chain strong', String(event.ordinal));
-    const label = event.units.length ? `${event.units.length}単位完成！` : event.mark === 'weak' ? '弱点に命中！' : event.mark === 'shield' ? '守護を獲得' : event.ordinal >= 8 ? '連鎖大爆発！' : event.ordinal >= 4 ? '連鎖加速！' : '詠唱をつなげ！';
+    const label = event.hop ? '星火連環 · 飛び火！' : event.units.length ? `${event.units.length}単位完成！` : event.mark === 'weak' ? '弱点に命中！' : event.mark === 'shield' ? '守護を獲得' : event.ordinal >= 8 ? '連鎖大爆発！' : event.ordinal >= 4 ? '連鎖加速！' : '詠唱をつなげ！';
     this.phase('chain', label);
     this.complete(event.units);
   }
@@ -116,9 +116,16 @@ export class CombatEffects {
     // banner be painted once before switching to the strike result.
     if (this.settings.reducedMotion && this.cutin) await pause(180);
     this.clearCutin();
-    const enemy = enemyOf(before.stage);
+    const enemy = enemyOf(before.stage, before.balanceVersion);
+    if (report.oneCastClear) {
+      this.position();
+      this.phase('one-cast', '一詠全成！', `${report.path.length}マスを、一度の詠唱で。`, `基礎攻撃 ${fmt(report.baseDamage ?? report.damage)} · 完成加算 ＋${fmt(report.clearBonus ?? 0)}`);
+      if (this.settings.sound) this.audio.oneCastClear();
+      await pause(this.duration(620));
+    }
     this.position('enemy');
-    this.phase('strike', report.defeated ? '撃破！' : report.skill ? '奥義炸裂！' : '連鎖炸裂！', fmt(report.damage));
+    const detail = [report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : ''].filter(Boolean).join(' · ');
+    this.phase('strike', report.defeated ? '撃破！' : report.proc?.triggered ? '三の護符 発動！' : report.skill ? '奥義炸裂！' : '連鎖炸裂！', fmt(report.damage), detail);
     this.text('.combat-score', `SCORE +${fmt(report.attackScore)}`);
     const enemyHp = Math.max(0, before.enemyHp - report.damage);
     const enemyTrack = document.querySelector<HTMLElement>('.enemy-health .health-track i');
@@ -155,7 +162,7 @@ export class CombatEffects {
     if (report.sheetAdvanced) {
       this.position();
       this.phase('sheet', 'シート完成！', `次のシート ${after.encounterSheet}`, `同じ敵との戦いは続く · 残りHP ${fmt(after.enemyHp)}`);
-      if (this.settings.sound) this.audio.sheetClear();
+      if (this.settings.sound && !report.oneCastClear) this.audio.sheetClear();
       await pause(this.duration(320));
     }
     if ((report.levelsGained ?? 0) > 0) {
