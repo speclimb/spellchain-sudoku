@@ -7,7 +7,7 @@ import { chromium } from '@playwright/test';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(project, 'dist');
-const prefix = '/rogue_numpla/';
+const prefix = '/spellchain-sudoku/';
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.mp3': 'audio/mpeg', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 await stat(resolve(dist, 'index.html'));
 
@@ -27,7 +27,7 @@ await new Promise((resolveListen, reject) => { server.once('error', reject); ser
 const base = `http://127.0.0.1:${server.address().port}${prefix}`;
 let browser;
 try {
-  browser = await chromium.launch({ channel: 'msedge', headless: true });
+  browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : 'chromium', headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [], responses = [];
   page.on('pageerror', error => errors.push(error.message));

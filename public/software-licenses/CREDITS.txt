@@ -1,0 +1,44 @@
+連鎖詠唱ナンプレ — ソフトウェアの第三者通知
+
+The browser build includes the following software. The license files in this
+directory preserve notices from the installed dependency sources. Source
+comments may be removed during bundling/minification, so these separate files
+are included in the static distribution.
+
+Phaser 3.90.0 — MIT
+Project: https://github.com/phaserjs/phaser
+Notice: Phaser-MIT.txt
+Copied from: node_modules/phaser/LICENSE.md
+
+EventEmitter3 — MIT
+Project: https://github.com/primus/eventemitter3
+Notice: EventEmitter3-MIT.txt
+Copied from: node_modules/eventemitter3/LICENSE (installed dependency 5.0.4)
+EventEmitter3 is also included in Phaser's prebuilt ES module.
+
+Earcut 2.2.4 (bundled by Phaser) — ISC
+Project: https://github.com/mapbox/earcut
+Notice: Earcut-ISC.txt
+Copied license block from: node_modules/phaser/src/geom/polygon/Earcut.js
+
+Simplify (bundled by Phaser) — BSD-2-Clause
+Project: https://github.com/mourner/simplify-js
+Notice: Simplify-BSD-2-Clause.txt
+Copied license block from: node_modules/phaser/src/geom/polygon/Simplify.js
+
+Matter 0.20.0 (bundled by Phaser) — MIT
+Project: https://github.com/liabru/matter-js
+Notice: Matter-MIT.txt
+Copied from: node_modules/phaser/src/physics/matter-js/lib/license.js
+Additional source notices: Matter-additional-notices.txt
+The additional file preserves the original inline attribution and modification
+notices for Minko Gechev, Gavin Kistner, and Paul Bourke, with their source paths.
+
+Vite 7.3.7 runtime module-preload helper — MIT
+Project: https://github.com/vitejs/vite
+Notice: Vite-core-MIT.txt
+Copied core-license section from: node_modules/vite/LICENSE.md
+
+The original third-party code is bundled/minified for browser delivery; the
+license notices are retained separately. These notices do not assign a license
+to the game's original code or content. Audio notices are in ../audio-licenses/.

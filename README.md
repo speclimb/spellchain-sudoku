@@ -2,6 +2,10 @@
 
 数字の起点を選び、連鎖で戦う日本語ブラウザゲーム。Phaser / TypeScript / Vite。PCとスマホ縦画面に対応しています。
 
+**[ブラウザで遊ぶ](https://speclimb.github.io/spellchain-sudoku/)**
+
+リポジトリ: [speclimb/spellchain-sudoku](https://github.com/speclimb/spellchain-sudoku)
+
 ## 起動
 
 Node.js 24以降を使用します。
@@ -38,6 +42,8 @@ PCでは矢印キーで盤面のフォーカスを移動し、Enterで起点を�
 
 [出典・加工内容・ライセンス](THIRD_PARTY_NOTICES.md)と素材ごとのURL・ハッシュを保存しています。配布用にも`audio-licenses/`へクレジットとCC0原文を含め、設定画面から参照できます。
 
+Phaserなど配布するライブラリの著作権・ライセンス通知は [`software-licenses/`](public/software-licenses/CREDITS.txt) にまとめ、公開サイトにも同梱しています。
+
 ビルドは相対URLを使用するため、GitHub Pagesのリポジトリ配下にも配置できます。音源を含めて`dist/`一式を配信してください。実行時に素材サイトへの接続は不要です。
 
 ## 実装済みの内容
@@ -62,11 +68,17 @@ npm run build
 npm run test:browser
 ```
 
-ブラウザテストはWindowsのMicrosoft Edgeを非表示で使用します。ローカル開発サーバーを自動起動し、PCとスマホ相当の表示幅、通常入力とスキル、7戦目以降への継続と敗北、連鎖・攻撃・防御の演出、シート終盤の守護維持、シート切替時の守護リセット、保存・再開を確認します。音源12点の読み込み・デコード・再生開始、演出中の消音、音源欠損時の続行も検証します。スクリーンショットは `.runtime/screenshots/` に保存されます。
+ブラウザテストはWindowsではMicrosoft Edge、それ以外ではPlaywrightのChromiumを非表示で使用します。Windows以外では先に `npx playwright install --with-deps chromium` を実行してください。ローカル開発サーバーを自動起動し、PCとスマホ相当の表示幅、通常入力とスキル、7戦目以降への継続と敗北、連鎖・攻撃・防御の演出、シート終盤の守護維持、シート切替時の守護リセット、保存・再開を確認します。音源12点の読み込み・デコード・再生開始、演出中の消音、音源欠損時の続行も検証します。スクリーンショットは `.runtime/screenshots/` に保存されます。
 
-ビルド後に `node scripts/smoke-audio-pages.mjs` を実行すると、専用の一時サーバーで `/rogue_numpla/` 配下の配信を確認できます。JavaScript・CSS・音源・ライセンスの読み込みと実際の1手を検証し、終了時にそのサーバーを閉じます。
+ビルド後に `node scripts/smoke-audio-pages.mjs` を実行すると、専用の一時サーバーで `/spellchain-sudoku/` 配下の配信を確認できます。JavaScript・CSS・音源・ライセンスの読み込みと実際の1手を検証し、終了時にそのサーバーを閉じます。
 
 `npm run generate:puzzles` で収録問題を同じ固定シードから再生成・検証できます。
+
+## GitHub Pagesへの公開
+
+`main` へのpushで [GitHub Actions](https://github.com/speclimb/spellchain-sudoku/actions) がルールテスト、ビルド、ブラウザテスト、リポジトリ配下での音源・ライセンス配信確認を実行し、成功した `dist/` をGitHub Pagesに公開します。Pull Requestでは同じ検証だけを実行します。
+
+公開元はリポジトリの Settings → Pages → Build and deployment → Source で **GitHub Actions** を指定します。手動で再公開するときは Actions の **Test and deploy GitHub Pages** から **Run workflow** を実行できます。
 
 ## 構成
 

@@ -1,4 +1,23 @@
-# Audio asset notices
+# Third-party notices
+
+## Runtime software
+
+The static build includes Phaser 3.90.0 and its bundled runtime components, plus Vite's module-preload helper. Their original notices are distributed in [`public/software-licenses/`](public/software-licenses/CREDITS.txt), which Vite copies unchanged to `dist/software-licenses/`.
+
+| Component | License / notice | Installed source used for the notice |
+|---|---|---|
+| Phaser 3.90.0 | [MIT](public/software-licenses/Phaser-MIT.txt) | `node_modules/phaser/LICENSE.md` |
+| EventEmitter3 | [MIT](public/software-licenses/EventEmitter3-MIT.txt) | `node_modules/eventemitter3/LICENSE` (installed dependency: 5.0.4) |
+| Earcut 2.2.4, bundled by Phaser | [ISC](public/software-licenses/Earcut-ISC.txt) | License block in `node_modules/phaser/src/geom/polygon/Earcut.js` |
+| Simplify, bundled by Phaser | [BSD-2-Clause](public/software-licenses/Simplify-BSD-2-Clause.txt) | License block in `node_modules/phaser/src/geom/polygon/Simplify.js` |
+| Matter 0.20.0, bundled by Phaser | [MIT](public/software-licenses/Matter-MIT.txt), [additional source notices](public/software-licenses/Matter-additional-notices.txt) | `node_modules/phaser/src/physics/matter-js/lib/license.js` and the source files named in the additional notices |
+| Vite 7.3.7 runtime helper | [MIT](public/software-licenses/Vite-core-MIT.txt) | Core-license section of `node_modules/vite/LICENSE.md` |
+
+These license files preserve the original wording, including comment markers where the notice is embedded in a source file; trailing whitespace is removed from the Matter license. Production bundling/minification may remove source comments; the separate files retain the notices in the published site. Phaser's vendored components retain their upstream authors' notices and modifications. The additional Matter notices record Minko Gechev, Gavin Kistner, and Paul Bourke exactly as credited in Phaser's source.
+
+These notices apply to third-party components only; they do not assign a license to the game's original code or content. When upgrading dependencies, refresh the copied notices against the installed sources.
+
+## Audio assets
 
 All 12 bundled sample effects are CC0-1.0 assets. Attribution is optional under CC0; this record preserves provenance for source and static-site distribution. License/source verification date: 2026-10-13.
 
@@ -10,7 +29,7 @@ All 12 bundled sample effects are CC0-1.0 assets. Attribution is optional under 
 
 [CC0 1.0 legal code](public/audio-licenses/CC0-1.0.txt), retrieved from https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt.
 
-## Selected files and preparation
+### Selected files and preparation
 
 | Bundled sample | Original file | Duration |
 |---|---|---|

@@ -1,0 +1,14 @@
+node_modules/phaser/src/physics/matter-js/lib/core/Common.js
+        // https://github.com/mgechev/javascript-algorithms
+        // Copyright (c) Minko Gechev (MIT license)
+        // Modifications: tidy formatting and naming
+
+node_modules/phaser/src/physics/matter-js/lib/geometry/Svg.js
+        // http://phrogz.net/convert-svg-path-to-all-absolute-commands
+        // Copyright (c) Gavin Kistner
+        // http://phrogz.net/js/_ReuseLicense.txt
+        // Modifications: tidy formatting and naming
+
+node_modules/phaser/src/physics/matter-js/lib/geometry/Vertices.js
+        // http://paulbourke.net/geometry/polygonmesh/
+        // Copyright (c) Paul Bourke (use permitted)
