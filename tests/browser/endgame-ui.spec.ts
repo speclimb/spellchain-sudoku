@@ -191,16 +191,17 @@ test('free tokens take priority over full mana, and reserved fuel plus five-enco
   expect(result).toMatchObject({ mana: 8, manaOverflow: 2, freeSkillTokens: 1 });
 });
 
-test('an exhausted upper-relic boss offers both five-encounter boons and applying one survives reload', async ({ page }) => {
+test('an exhausted maximum-growth boss offers both five-encounter boons and applying one survives reload', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
   await page.evaluate(async key => {
     const enginePath = '/src/game/engine.ts', contentPath = '/src/game/content.ts';
     const { newSave, startRun } = await import(/* @vite-ignore */ enginePath);
-    const { greaterIds, primeIds } = await import(/* @vite-ignore */ contentPath);
+    const { primeIds } = await import(/* @vite-ignore */ contentPath);
     const save = startRun(newSave(), 'fuse', 71); save.meta.tutorialDone = true; save.settings.reducedMotion = true;
     const run = save.run; run.stage = 4; run.stats.kills = 4; run.enemyHp = 1; run.skillRank = 2;
     run.inventory = [...run.pool]; run.maxHp -= 8; run.hp = run.maxHp;
-    for (const id of greaterIds) run.tier[id] = 2;
+    run.skillLevels = { fuse: 10, bridge: 10, pierce: 10, bastion: 10 };
+    for (const id of run.inventory) { run.tier[id] = 3; run.relicLevels[id] = 10; }
     for (const id of primeIds) run.acquisitionRank[id] = 3;
     localStorage.setItem(key, JSON.stringify(save));
   }, key);
@@ -208,7 +209,11 @@ test('an exhausted upper-relic boss offers both five-encounter boons and applyin
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
+  const first = await saved(page);
+  expect(first.run!.rewardStep).toBe('skill');
+  await page.locator('[data-reward="training"]').click();
   const victory = await saved(page);
+  expect(victory.run!.rewardStep).toBe('relic');
   expect(victory.run!.rewards.slice().sort()).toEqual(['defense-boon', 'magic-boon', 'training']);
   await expect(page.locator('[data-reward="magic-boon"]')).toContainText('5戦');
   await expect(page.locator('[data-reward="defense-boon"]')).toContainText('25％');

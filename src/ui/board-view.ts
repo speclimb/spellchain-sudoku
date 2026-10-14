@@ -1,5 +1,5 @@
 import { legalOrigins, longestOrigins } from '../game/engine';
-import type { FillEvent, Report, Run } from '../game/types';
+import type { FillEvent, Report, Run, SkillId } from '../game/types';
 
 /** A sheet-local projection only. Never let a preview mutate the committed run. */
 export function boardView(run: Run, prediction: Report | null, inspect: number | null = null) {
@@ -17,9 +17,9 @@ export function boardView(run: Run, prediction: Report | null, inspect: number |
   return { display, path: visiblePath, current, sheet: display.sheet };
 }
 
-export function originView(run: Run, skill: boolean, busy: boolean) {
-  const legal = new Set(busy ? [] : legalOrigins(run, skill));
-  const maximum = !busy && run.inventory.includes('lens') && run.tier.lens === 2 ? longestOrigins(run, skill) : null;
+export function originView(run: Run, skill: boolean, busy: boolean, skillId?: SkillId) {
+  const legal = new Set(busy ? [] : legalOrigins(run, skill, skillId));
+  const maximum = !busy && run.inventory.includes('lens') && (run.tier.lens ?? 1) >= 2 ? longestOrigins(run, skill, skillId) : null;
   return { legal, maximum, longest: new Set(maximum?.cells ?? []) };
 }
 

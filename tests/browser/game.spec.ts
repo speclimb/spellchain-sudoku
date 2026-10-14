@@ -37,7 +37,7 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     for (let encounter = 0; encounter < 5; encounter++) {
       save.run.enemyHp = 1;
       save = dispatch(save, { type: 'play', cell: singles(save.run.cells)[0], skill: false, revision: save.run.revision });
-      save = dispatch(save, { type: 'reward', relic: save.run.rewards[0], revision: save.run.revision });
+      while (save.run.phase === 'reward') save = dispatch(save, { type: 'reward', relic: save.run.rewards[0], revision: save.run.revision });
     }
     save.run.enemyHp = 1;
     localStorage.setItem(key, JSON.stringify(save));
@@ -75,11 +75,11 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     const { previewAction } = await import(/* @vite-ignore */ enginePath);
     const { singles } = await import(/* @vite-ignore */ sudokuPath);
     const save = JSON.parse(localStorage.getItem(key)!);
-    save.run.hp = 1; save.run.turn = 2;
-    // Keep the real encounter-8 strong attack, but remove Ward from this loss
-    // fixture: the softer curve lets an intact defensive build block every root.
+    save.run.hp = 1; save.run.turn = 2; save.run.spellLevel = 1;
+    // Keep the real encounter-8 attack. Use a short-chain spell and remove Ward
+    // so this focused loss fixture does not block every root with accumulated guard.
     save.run.inventory = save.run.inventory.filter((id: string) => id !== 'ward');
-    delete save.run.acquisitionRank.ward; delete save.run.tier.ward;
+    delete save.run.acquisitionRank.ward; delete save.run.tier.ward; delete save.run.relicLevels.ward;
     for (const cell of singles(save.run.cells)) {
       const report = previewAction(save.run, cell);
       if (!report.defeated && !report.fullClear && report.received > 0) {
@@ -157,6 +157,9 @@ test('reload during the victory animation preserves a single clear and the exact
   const committed = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
   expect(committed.meta.clears).toBe(1);
   expect(committed.run.phase).toBe('reward');
+  await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
+  await expect(page.locator('.reward-progress')).toHaveCount(0);
+  await expect(page.locator('.modal-intro')).toContainText('敵を撃破しました');
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();

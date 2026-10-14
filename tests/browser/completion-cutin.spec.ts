@@ -183,6 +183,7 @@ test('exhausted relic pool offers repeatable growth and advances to another play
     save.meta.tutorialDone = true;
     save.settings.reducedMotion = true;
     save.run.inventory = [...save.run.pool];
+    save.run.relicLevels = Object.fromEntries(save.run.inventory.map((id: string) => [id,10]));
     for (const id of ['duality', 'trinity', 'quint', 'sept']) save.run.acquisitionRank[id] = 3;
     save.run.maxHp -= 8;
     save.run.hp = save.run.maxHp;

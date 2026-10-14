@@ -1,6 +1,8 @@
 import './completion-effects.css';
+import './enemy-effects.css';
 import { chainBonus, spellMultiplier } from '../game/engine';
-import { enemyOf } from '../game/content';
+import { enemyForRun, enemyIntent } from '../game/enemies';
+import { enemyAttackArt } from './enemy-attack-art';
 import type { FillEvent, Report, Run, Settings } from '../game/types';
 import type { IncantationAudio } from './audio';
 
@@ -133,7 +135,7 @@ export class CombatEffects {
     // banner be painted once before switching to the strike result.
     if (this.settings.reducedMotion && this.cutin) await pause(180);
     this.clearCutin();
-    const enemy = enemyOf(before.stage, before.balanceVersion);
+    const enemy = enemyForRun(before), intent = enemyIntent(before);
     if (report.oneCastClear && !report.segments?.length) {
       this.position();
       this.phase('one-cast', '一詠全成！', `${report.path.length}マスを、一度の詠唱で。`, `基礎攻撃 ${fmt(report.baseDamage ?? report.damage)} · 完成加算 ＋${fmt(report.clearBonus ?? 0)}`);
@@ -142,7 +144,7 @@ export class CombatEffects {
     }
     if (this.skipped) return;
     this.position('enemy');
-    const detail = [report.procs?.length ? report.procs.map(proc => `${({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[proc.id]} ${proc.triggered ? '発動' : '不発'}`).join(' · ') : report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : ''].filter(Boolean).join(' · ');
+    const detail = [report.procs?.length ? report.procs.map(proc => `${({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[proc.id]} ${proc.triggered ? '発動' : '不発'}`).join(' · ') : report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : '', report.armorBroken ? '鏡甲を解除！' : report.armorPrevented ? `鏡甲が ${fmt(report.armorPrevented)} 軽減` : ''].filter(Boolean).join(' · ');
     this.phase('strike', report.defeated ? '撃破！' : report.proc?.triggered ? '三の護符 発動！' : report.skill ? '奥義炸裂！' : '連鎖炸裂！', fmt(report.damage), detail);
     this.text('.combat-score', `SCORE +${fmt(report.attackScore)}`);
     const enemyHp = Math.max(0, before.enemyHp - report.damage);
@@ -162,19 +164,23 @@ export class CombatEffects {
       this.position();
       const ward = document.querySelector('.sheet-ward b');
       if (ward) ward.textContent = String(report.shield);
-      const blocked = report.received === 0;
+      const charging = intent.state === 'charge' && report.incoming === 0;
+      const blocked = !charging && report.received === 0;
       const prevented = Math.min(report.incoming, report.shield);
       const strongAttack = report.incoming > enemy.attack;
+      this.host.dataset.enemyStyle = enemy.attackStyle;
+      this.host.querySelector('.enemy-attack-art')?.remove();
+      this.host.insertAdjacentHTML('afterbegin', enemyAttackArt(enemy.attackStyle));
       this.host.dataset.blocked = String(blocked);
       this.host.dataset.heavy = String(strongAttack);
-      this.phase('counter', blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', blocked ? '0' : `−${report.received}`, prevented ? `守護で ${prevented} 軽減` : '');
+      this.phase(charging ? 'charge' : 'counter', charging ? '霜牙の狼は力を溜める' : blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', charging || blocked ? '0' : `−${report.received}`, charging ? `次の手は ${fmt(intent.nextIncoming)} の突進` : `${enemy.attackName}${prevented ? ` · 守護で ${prevented} 軽減` : ''}`);
       this.text('.combat-score', '');
-      document.querySelector('.app-shell')?.classList.add(blocked ? 'player-blocked' : 'player-struck');
+      if (!charging) document.querySelector('.app-shell')?.classList.add(blocked ? 'player-blocked' : 'player-struck');
       const health = document.querySelector<HTMLElement>('.vital-health strong');
       const healthBar = document.querySelector<HTMLElement>('.health-track.player i');
       if (health) health.firstChild!.textContent = String(Math.max(0, before.hp - report.received));
       if (healthBar) healthBar.style.width = `${Math.max(0, before.hp - report.received) / before.maxHp * 100}%`;
-      if (this.settings.sound) this.audio.attack(report.received, blocked);
+      if (this.settings.sound && !charging) this.audio.attack(report.received, blocked);
       await pause(this.duration(360));
       document.querySelector('.app-shell')?.classList.remove('player-struck', 'player-blocked');
     }

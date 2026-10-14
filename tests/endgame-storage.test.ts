@@ -11,6 +11,14 @@ function fixture(seed = 71): Save {
   const save = newSave(); save.meta.clears = 99;
   return startRun(save, 'fuse', seed);
 }
+
+/** Reconstruct the pre-expansion rules explicitly for compatibility assertions. */
+function legacyRun(run: Run): Run {
+  delete run.expansionVersion; delete run.enemyRulesVersion; delete run.skillLevels;
+  delete run.equippedSkills; delete run.relicLevels; delete run.rewardStep;
+  delete run.pendingRelicRewards; delete run.contributions;
+  return run;
+}
 const play = (run: Run, cell = singles(run.cells)[0], skill = false) => ({ type: 'play' as const, cell, skill, revision: run.revision });
 function ownUppers(run: Run) {
   run.inventory = [...greaterIds];
@@ -32,12 +40,12 @@ function carryFixture(): Save {
   throw new Error('No generated long-chain fixture found.');
 }
 
-describe('endgame relic content and repeatable reward selection', () => {
+describe('legacy relic content and repeatable reward compatibility', () => {
   it('defines all four ranked primes and seven independent upper tiers', () => {
     expect(primeIds).toEqual(['duality', 'trinity', 'quint', 'sept']);
     expect(greaterIds).toHaveLength(7);
     for (const id of ['duality', 'quint', 'sept']) expect(RELICS.find(relic => relic.id === id)?.unlock).toBe(0);
-    const run = fixture().run!;
+    const run = legacyRun(fixture().run!);
     for (const id of primeIds) {
       run.inventory.push(id); run.acquisitionRank[id] = 2; run.tier[id] = 2;
       expect(relicDescription(id, run)).toContain('45％');
@@ -48,7 +56,7 @@ describe('endgame relic content and repeatable reward selection', () => {
     }
   });
   it('always offers a missing build-defining upper without granting it', () => {
-    const run = fixture().run!; run.stage = 4;
+    const run = legacyRun(fixture().run!); run.stage = 4;
     const before = structuredClone(run);
     for (let seed = 0; seed < 80; seed++) {
       const rewards = rollRewards(run, new Random(seed));
@@ -63,7 +71,7 @@ describe('endgame relic content and repeatable reward selection', () => {
     expect(canTakeReward(run, 'greater:quint')).toBe(true); // Can acquire an unowned base directly.
   });
   it('offers exactly training and the two five-encounter boons after all uppers', () => {
-    const run = fixture().run!; run.stage = 9; ownUppers(run);
+    const run = legacyRun(fixture().run!); run.stage = 9; ownUppers(run);
     for (let seed = 0; seed < 30; seed++) expect(rollRewards(run, new Random(seed)).sort()).toEqual(['defense-boon', 'magic-boon', 'training']);
     expect(canTakeReward(run, 'magic-boon')).toBe(true);
     run.stage = 8;
@@ -71,14 +79,14 @@ describe('endgame relic content and repeatable reward selection', () => {
     for (let seed = 0; seed < 20; seed++) expect(rollRewards(run, new Random(seed))).not.toContain('defense-boon');
   });
   it('keeps early exhaustion fillers as training, vitality, and recovery', () => {
-    const run = fixture().run!; run.pool = [];
+    const run = legacyRun(fixture().run!); run.pool = [];
     expect(rollRewards(run, new Random(1)).sort()).toEqual(['recovery', 'training', 'vitality']);
   });
 });
 
 describe('endgame save migration and bounded resources', () => {
   it('adds new relics to old pools while preserving every pending choice and random state', () => {
-    const old = fixture() as any, r = old.run;
+    const old = fixture() as any, r = legacyRun(old.run) as any;
     r.pool = r.pool.filter((id: string) => !['duality', 'quint', 'sept'].includes(id));
     r.phase = 'reward'; r.enemyHp = 0; r.cells = [...r.solution]; r.stats.kills = 1;
     r.rewards = ['wick', 'pen', 'recovery'];

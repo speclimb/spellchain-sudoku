@@ -63,7 +63,7 @@ test('desktop: honest Trinity bounds survive reselection and resolve exactly onc
   expect(errors).toEqual([]);
 });
 
-test('mobile: fifth boss offers rank upgrade and two Greater relics, and repeated reward clicks collect once', async ({ page }) => {
+test('mobile: fifth boss awards skill then relic, and repeated reward clicks collect each step once', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
   await page.evaluate(async key => {
@@ -78,25 +78,34 @@ test('mobile: fifth boss offers rank upgrade and two Greater relics, and repeate
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
   const committed = await saved(page);
-  expect(committed.run!.rewards).toContain('skill-upgrade');
-  const upperChoices = committed.run!.rewards.filter(id => id.startsWith('greater:'));
-  expect(upperChoices).toHaveLength(2);
-  expect(upperChoices.every(id => ['greater:stroke', 'greater:duality', 'greater:trinity', 'greater:quint', 'greater:sept', 'greater:lens', 'greater:wick'].includes(id))).toBe(true);
-  expect(upperChoices.some(id => id === 'greater:lens' || id === 'greater:wick')).toBe(true);
+  expect(committed.run!.rewardStep).toBe('skill');
+  expect(committed.run!.rewards).toHaveLength(3);
+  expect(committed.run!.rewards.every(id => id.startsWith('skill:'))).toBe(true);
   await resume(page);
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
   expect(await saved(page)).toEqual(committed);
-  await expect(page.locator('.upgrade-reward')).toHaveCount(3);
+  await expect(page.locator('.reward-progress')).toContainText('1/2');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: '.runtime/screenshots/mobile-boss-upgrades.png', fullPage: true });
-  await page.evaluate(() => {
-    const button = document.querySelector<HTMLButtonElement>('[data-reward="skill-upgrade"]')!;
+  await page.evaluate(id => {
+    const button = document.querySelector<HTMLButtonElement>(`[data-reward="${id}"]`)!;
     for (let i = 0; i < 10; i++) button.click();
-  });
+  }, committed.run!.rewards[0]);
+  const second = await saved(page);
+  expect(second.run!.rewardStep).toBe('relic');
+  expect(second.run!.spellLevel).toBe(committed.run!.spellLevel);
+  expect(second.run!.stage).toBe(4); expect(second.run!.revision).toBe(committed.run!.revision + 1);
+  await resume(page); expect(await saved(page)).toEqual(second);
+  await expect(page.locator('.reward-progress')).toHaveAttribute('aria-label', 'ボス報酬 2/2 遺物');
+  await page.evaluate(id => {
+    const button = document.querySelector<HTMLButtonElement>(`[data-reward="${id}"]`)!;
+    for (let i = 0; i < 10; i++) button.click();
+  }, second.run!.rewards[0]);
   const advanced = await saved(page);
-  expect(advanced.run!.skillRank).toBe(2); expect(advanced.run!.spellLevel).toBe(committed.run!.spellLevel);
-  expect(advanced.run!.stage).toBe(5); expect(advanced.run!.revision).toBe(committed.run!.revision + 1);
-  await expect(page.locator('.skill-rank')).toHaveText('Rank 2');
+  expect(advanced.run!.stage).toBe(5); expect(advanced.run!.revision).toBe(committed.run!.revision + 2);
+  expect(advanced.run!.skillLevels).toEqual(second.run!.skillLevels);
+  expect(advanced.run!.stats.kills).toBe(5);
+  await expect(page.locator('.skill-rank')).toContainText('Lv.');
   await page.reload(); expect(await saved(page)).toEqual(advanced); expect(errors).toEqual([]);
 });
 
@@ -118,7 +127,7 @@ test('mobile: Battery reserve and Greater Trinity rank remain readable and persi
   await page.locator('.inventory summary').click();
   await expect(page.locator('[data-relic="trinity"]')).toBeVisible();
   await expect(page.locator('[data-relic="trinity"]')).toContainText('上位');
-  await expect(page.locator('[data-relic="trinity"]')).toContainText('取得 3/3');
+  await expect(page.locator('[data-relic="trinity"]')).toContainText('Lv.3');
   await expect(page.locator('[data-relic="trinity"]')).toContainText('60％');
   await expect(page.locator('[data-relic="stroke"]')).toContainText('5マス');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

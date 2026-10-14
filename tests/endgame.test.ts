@@ -11,6 +11,15 @@ function fixture(seed = 71, character: CharacterId = 'fuse'): Run {
   const save = newSave(); save.meta.clears = 99;
   return startRun(save, character, seed).run!;
 }
+
+/** Reconstruct the pre-expansion rules explicitly for compatibility assertions. */
+function legacyRun(run: Run): Run {
+  delete run.expansionVersion; delete run.enemyRulesVersion; delete run.skillLevels;
+  delete run.equippedSkills; delete run.relicLevels; delete run.rewardStep;
+  delete run.pendingRelicRewards; delete run.contributions;
+  return run;
+}
+const legacyFixture = (seed = 71): Run => legacyRun(fixture(seed));
 const play = (run: Run, cell = legalOrigins(run)[0], skill = false) => ({ type: 'play' as const, cell, skill, revision: run.revision });
 const choose = (run: Run, relic: RewardId) => resolveAction(run, { type: 'reward', relic, revision: run.revision });
 function boardWith(blanks: number[], character: CharacterId = 'fuse'): Run {
@@ -299,10 +308,10 @@ describe('honest forecasts and cached longest-origin lens', () => {
   });
 });
 
-describe('endgame rewards, prime ranks, and five-encounter boons', () => {
+describe('legacy endgame reward compatibility and five-encounter boons', () => {
   it('guarantees an available Lens/Wick upgrade at every boss until both are owned, without granting either', () => {
     for (let seed = 0; seed < 60; seed++) for (const owned of [[], ['lens'], ['wick']] as const) {
-      const run = fixture(seed); run.stage = 4; run.inventory = [...owned];
+      const run = legacyFixture(seed); run.stage = 4; run.inventory = [...owned];
       for (const id of owned) run.tier[id] = 2;
       const before = structuredClone(run), offers = rollRewards(run, new Random(seed));
       expect(offers).toHaveLength(3); expect(offers).toContain('skill-upgrade');
@@ -312,7 +321,7 @@ describe('endgame rewards, prime ranks, and five-encounter boons', () => {
     }
   });
   it.each(primes)('%s duplicates stop at acquisition rank three while upper tier stays independent', id => {
-    let run = fixture(); run.inventory = [...run.pool];
+    let run = legacyFixture(); run.inventory = [...run.pool];
     for (const prime of primes) run.acquisitionRank[prime] = prime === id ? 1 : 3;
     run.tier[id] = 2; run.phase = 'reward'; run.rewards = [id];
     run = choose(run, id); expect(run.acquisitionRank[id]).toBe(2); expect(run.tier[id]).toBe(2);
@@ -322,7 +331,7 @@ describe('endgame rewards, prime ranks, and five-encounter boons', () => {
     expect(rollRewards(run, new Random(1))).not.toContain(id);
   });
   function allUpperReward(): Run {
-    const run = fixture(); run.stage = 34; run.stats.kills = 35; run.phase = 'reward'; run.skillRank = 2;
+    const run = legacyFixture(); run.stage = 34; run.stats.kills = 35; run.phase = 'reward'; run.skillRank = 2;
     run.inventory = RELICS.map(relic => relic.id); run.tier = Object.fromEntries(greaterIds.map(id => [id, 2]));
     for (const id of primeIds) run.acquisitionRank[id] = 3;
     run.rewards = rollRewards(run, new Random(71)); return run;

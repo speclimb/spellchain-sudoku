@@ -204,3 +204,58 @@
   .command-panel:has(.spell-resources) .skill-button,.command-panel:has(.spell-resources) .cast-button{grid-row:3}
   .command-panel:has(.spell-resources) .skill-description{grid-row:4}
 }
+
+/* Combat-growth expansion: compact choices and honest, non-additive reports. */
+.enemy-behavior{display:flex;gap:8px;align-items:baseline;line-height:1.65;margin:-2px 0 11px;padding:6px 9px;border-left:2px solid #9c8aac;background:#20243a66;color:#aeb5c9;font-size:10px}
+.enemy-behavior>span{flex-shrink:0;color:#dbbde5;font-size:9px}
+.enemy-intent{max-width:120px}.enemy-intent small{white-space:normal;line-height:1.5}
+.skill-picker{display:flex;gap:5px;flex-wrap:wrap;margin-top:12px;padding-bottom:2px}
+.skill-picker>span{width:100%;font-size:9px;color:#a3a9be;line-height:1.6}
+.skill-picker button{flex:1;min-width:0;padding:8px 4px;border:1px solid #46425d;border-radius:4px;background:#202338;color:#bdb5ce;font-size:9px;line-height:1.5}
+.skill-picker button[aria-pressed=true]{background:#403348;border-color:#c6a3d5;color:#f0d6f8}
+.skill-picker button b{display:block;font-size:16px;font-weight:400}.skill-picker button small{display:block;font-size:8px;color:#a899ba}
+.skill-picker+.skill-button{margin-top:8px}
+.reward-progress{display:flex;gap:11px;justify-content:center;align-items:center;margin:0 0 15px;font-size:11px}
+.reward-progress span{border:1px solid #3c4357;border-radius:20px;color:#7f8aa1;padding:6px 15px}
+.reward-progress .current{color:#f0d49e;border-color:#b09666;background:#55432b55}
+.reward-progress .complete{color:#aed2c0;border-color:#587866}.reward-progress i{font-style:normal;color:#7c8396}
+.equipment-editor{margin:17px 0 22px;padding:12px 15px;border:1px solid #414560;border-radius:6px;background:#171e31}
+.equipment-editor summary{cursor:pointer;font-size:12px;color:#c1b4d3;line-height:1.7}.equipment-editor summary>span{float:right;color:#a79bb9;font-size:10px}
+.equipment-editor p{font-size:10px;line-height:1.8;color:#98a1b9;margin:9px 0}
+.equipment-slots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0}
+.equipment-slots>span{padding:9px 7px;border:1px solid #4b4963;border-radius:4px;background:#282a40;min-width:0}
+.equipment-slots .intrinsic-slot{border-color:#7c6750;background:#342d2c}.equipment-slots .empty-slot{border-style:dashed;background:transparent;color:#7b859e}
+.equipment-slots b{font-size:10px;line-height:1.8;font-weight:500;display:block}.equipment-slots small{font-size:8px;color:#a3a3b8;display:block;line-height:1.6}
+.equipment-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.equipment-options button{display:flex;gap:8px;align-items:center;text-align:left;padding:10px;border:1px solid #4b485e;border-radius:4px;background:#25273b;color:#ccc5df;min-height:52px}
+.equipment-options button[aria-pressed=true]{border-color:#b6a0cc;background:#373047}.equipment-options button>span:first-child{font-size:24px}.equipment-options button>span:nth-child(2){flex:1;min-width:0}.equipment-options strong{font-size:11px;font-weight:500;display:block}.equipment-options small{font-size:9px;color:#a8a0ba;line-height:1.7}.equipment-options button>span>small{display:block}.equipment-options button>b{font-size:14px;font-weight:400}.equipment-options button:disabled{opacity:.45;cursor:not-allowed}
+.equipment-editor .equipment-saved{font-size:9px;text-align:right;color:#8daf9e;margin-bottom:0}
+.contribution-report{margin:17px 0 20px;padding:17px;border:1px solid #536078;border-radius:6px;background:linear-gradient(140deg,#21334488,#172135)}
+.contribution-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.contribution-heading .micro{font-size:8px;letter-spacing:.18em;color:#9dabbb}.contribution-heading h3{font-family:var(--serif);font-size:18px;font-weight:500;line-height:1.7;color:#e0d8c7}
+.report-window{display:flex;padding:3px;border:1px solid #445167;border-radius:5px;background:#0f1c2d;flex-shrink:0}.report-window button{padding:7px 10px;font-size:10px;border-radius:3px;background:transparent;color:#8f9db5}.report-window button[aria-pressed=true]{background:#4b5361;color:#f3dfb3}
+.report-sample{font-size:10px;color:#9bacbd;margin:6px 0 13px;line-height:1.8}.report-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.report-totals>div{border-right:1px solid #4e566966;padding-right:7px;min-width:0}.report-totals>div:last-child{border-right:0}.report-totals span{font-size:9px;display:block;color:#9caabd;line-height:1.6}.report-totals strong{display:block;font:25px/1.6 Georgia,serif;font-variant-numeric:tabular-nums;color:#dfcfaf;overflow-wrap:anywhere}
+.report-highlights{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:12px 0;list-style:none;padding:0}.report-highlights li{display:flex;align-items:center;gap:7px;padding:9px 8px;background:#122135;border:1px solid #3e4a5f;border-radius:4px;min-width:0}.highlight-symbol{font-size:22px;color:#b9cbbb;flex-shrink:0}.report-highlights b{font-size:10px;font-weight:500;color:#d1d2c5;display:block}.report-highlights small{display:block;font-size:9px;line-height:1.7;color:#92b6b1}
+.report-caution,.report-explainer,.report-empty{font-size:10px;line-height:1.9;color:#9aa8be;margin:11px 0 0}.report-caution{padding-left:9px;border-left:2px solid #817554;color:#b4b3af}
+.contribution-details{margin-top:12px;border-top:1px solid #405066;padding-top:11px}.contribution-details>summary{cursor:pointer;font-size:11px;color:#b3c8d2;line-height:1.8}.contribution-details>summary>span{font-size:9px;color:#869ab2;float:right}.contribution-details h4{margin:18px 0 4px;font-size:12px;font-weight:500;color:#d2c7b4}.report-explainer{margin-top:5px}.contribution-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:11px}
+.contribution-item{padding:12px;background:#111d2e;border:1px solid #34435b;border-radius:5px;min-width:0}.contribution-item-heading{display:flex;gap:7px;align-items:center}.contribution-item-heading>span{font-size:23px;color:#c8b188}.contribution-item h5{font-size:11px;font-weight:500;color:#d4d2cb;flex:1;line-height:1.6}.contribution-item h5 small{font-size:9px;font-weight:400;color:#a89bba;display:block}.contribution-item-heading>b{font-size:9px;font-weight:500;color:#a1c3b6;white-space:nowrap}
+.contribution-metrics{font-size:10px;margin-top:9px}.contribution-metrics>div{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #34415480;line-height:1.6}.contribution-metrics dt{color:#9caac0}.contribution-metrics dd{margin:0;color:#d2d3c2;font-variant-numeric:tabular-nums;white-space:nowrap}
+.effect-opportunities{font-size:9px;color:#aaa2be;line-height:1.8;margin-top:9px}.report-next,.report-no-opportunity{font-size:9px;color:#8e9bb3;line-height:1.9;margin-top:10px}.report-next b{font-weight:500;color:#b9b59e;display:block}.report-no-opportunity{color:#8caaa5}
+@media(max-width:760px){
+  .enemy-behavior{font-size:8px;padding:3px 6px;margin:0 0 5px;gap:5px}.enemy-behavior>span{font-size:8px}.enemy-intent{max-width:108px}.enemy-intent small{font-size:7px;max-width:90px}
+  .skill-picker{grid-column:1/-1;grid-row:3;margin:1px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.skill-picker>span{grid-column:1/-1;font-size:8px;line-height:1.1}.skill-picker button{font-size:9px;padding:5px 3px}.skill-picker button b{display:inline;font-size:12px;margin-right:3px}.skill-picker button small{display:inline;margin-left:4px;font-size:8px}
+  .command-panel:has(.skill-picker) .skill-button,.command-panel:has(.skill-picker) .cast-button{grid-row:4}.command-panel:has(.skill-picker) .skill-description{grid-row:5}.command-panel:has(.skill-picker) .spell-resources{grid-row:6}
+  .reward-progress{font-size:10px;margin-bottom:12px;gap:8px}.reward-progress span{padding:5px 11px}.reward-summary{margin-bottom:15px}
+  .equipment-editor{padding:10px;margin:13px 0 16px}.equipment-editor summary{font-size:11px}.equipment-editor summary>span{font-size:9px}.equipment-editor p{font-size:9px}.equipment-slots{gap:5px}.equipment-slots>span{padding:7px 5px}.equipment-slots b{font-size:9px}.equipment-slots small{font-size:8px}.equipment-options{grid-template-columns:1fr}.equipment-options button{padding:8px 10px}.equipment-editor .equipment-saved{font-size:8px}
+  .contribution-report{padding:12px;margin:14px 0 16px}.contribution-heading{align-items:flex-start;gap:9px}.contribution-heading h3{font-size:15px}.contribution-heading .micro{font-size:7px}.report-window{padding:2px}.report-window button{font-size:8px;padding:6px 7px}.report-sample{font-size:9px;margin:5px 0 9px}.report-totals{gap:6px}.report-totals span{font-size:8px}.report-totals strong{font-size:20px;line-height:1.5}
+  .report-highlights{grid-template-columns:1fr;gap:5px;margin:10px 0}.report-highlights li{padding:7px 9px;gap:9px}.report-highlights li>span:last-child{display:flex;flex:1;align-items:baseline;justify-content:space-between;gap:7px;min-width:0}.highlight-symbol{font-size:18px;width:19px;text-align:center}.report-highlights b{font-size:10px;flex-shrink:0}.report-highlights small{font-size:9px;text-align:right}.report-caution,.report-explainer,.report-empty{font-size:9px;line-height:1.8}.report-caution{margin-top:8px}.contribution-details>summary{font-size:10px}.contribution-details>summary>span{font-size:8px;float:none;display:block;margin-left:13px}.contribution-items{grid-template-columns:1fr;gap:7px}.contribution-item{padding:10px}.contribution-details h4{font-size:11px}.report-next{font-size:9px}.reward-card .upgrade-path{grid-column:2}
+}
+@media(max-width:370px){.contribution-heading{display:block}.report-window{width:max-content;margin-top:7px}.report-totals strong{font-size:18px}.report-highlights li>span:last-child{display:block}.report-highlights small{text-align:left}.equipment-editor summary>span{float:none;display:block;margin-left:13px}.equipment-slots{grid-template-columns:1fr}.skill-picker button{font-size:8px}}
+/* The added enemy behavior stays above the full-size mobile board; recover its
+   vertical space from surrounding chrome, never from risk text or touch targets. */
+@media(max-width:760px){
+  body:has(.game-layout) .site-header{height:48px}
+  .adventure-heading{padding:4px 0 2px}
+  .enemy-card{padding-top:2px;padding-bottom:4px}
+  .tutorial{padding-top:3px;padding-bottom:3px;margin-bottom:4px}
+  .game-layout{gap:4px}
+  .tutorial button{line-height:1;min-height:24px}
+}

@@ -1,4 +1,5 @@
-import type { CharacterId, GreaterRelicId, RelicId, RepeatableRewardId, RewardId, Run } from './types';
+import type { CharacterId, GreaterRelicId, RelicId, RepeatableRewardId, RewardId, Run, SkillId } from './types';
+import { relicGrowthDescription, relicLevel, relicTierLevel, skillDescriptionFor, skillLevel, skillOf, type SkillRun } from './growth';
 export interface Character { id: CharacterId; name: string; symbol: string; title: string; passive: string; skill: string; skillName: string; unlock: number; affinity: RelicId[] }
 export const CHARACTERS: Character[] = [
   { id: 'fuse', name: '導火術師', symbol: '✦', title: '連鎖をつなぐ者', passive: '自動入力回数＋1', skillName: '星火連環', skill: '任意の空きマスから始動。この手の自動入力回数をさらに＋4。', unlock: 0, affinity: ['wick', 'echo', 'rekindle', 'lens'] },
@@ -71,6 +72,7 @@ export const characterOf = (id: CharacterId) => CHARACTERS.find(c => c.id === id
 export const relicOf = (id: RelicId) => RELICS.find(r => r.id === id)!;
 /** Descriptions use current acquisition rank and tier; missing entries mean rank/tier 1. */
 export function relicDescription(id: RelicId, run?: Run): string {
+  if (run?.expansionVersion && run.inventory.includes(id)) return relicGrowthDescription(run, id);
   const upper = run?.tier?.[id] === 2;
   if (id === 'stroke') return `各手で最初に埋めた${upper ? 5 : 3}マスのダメージを2倍。連鎖が長くなっても有効。`;
   if (id === 'lens' && upper) return '弱点マスの追加ダメージを20にする。各起点からの確定連鎖を比べ、通常入力・スキルそれぞれで最長になるすべての起点を示す。';
@@ -86,13 +88,34 @@ export function relicDescription(id: RelicId, run?: Run): string {
   }
   return relicOf(id).description;
 }
-export function skillDescription(run: Pick<Run, 'character' | 'skillRank'>): string {
+export function skillDescription(run: SkillRun): string {
+  if (run.expansionVersion) return skillDescriptionFor(run, run.character);
   if (run.skillRank !== 2) return characterOf(run.character).skill;
   if (run.character === 'fuse') return '任意の空きマスから始動。自動入力回数＋4。つながる確定マスがなくなった時、残り回数を1使い、直前と同じ数字の空きマスへ1回だけ飛び火して続ける。';
   if (run.character === 'scribe') return '任意の空きマスから始動。この手の完成ダメージを4倍。';
   return '任意の空きマスから始動。この手の総ダメージを2.5倍。';
 }
 export function rewardOf(id: RewardId, run?: Run) {
+  if (id.startsWith('skill:')) {
+    const skillId = id.slice(6) as SkillId, skill = skillOf(skillId);
+    if (!run) return { ...skill, id, name: `${skill.name}を習得`, description: skill.description };
+    const before = skillLevel(run, skillId), after = Math.min(10, before + 1);
+    const next = { ...run, expansionVersion: 1 as const, skillLevels: { ...run.skillLevels, [skillId]: after } };
+    return { ...skill, id, name: `${skill.name} Lv.${before}→${after}`, kind: after === 5 || after === 10 ? 'スキル進化' : before ? 'スキル強化' : '新スキル',
+      description: `${before ? skillDescriptionFor(run, skillId) : '未習得'} → ${skillDescriptionFor(next, skillId)}${!before && skillId !== run.character ? ` ${(run.equippedSkills?.length ?? 0) < 2 ? '空きスロットへ自動装備。' : '追加装備2枠が満杯。報酬後に入れ替え可能。'}` : ''}` };
+  }
+  if (run?.expansionVersion && run.rewardStep !== 'legacy' && (id.startsWith('greater:') || id.startsWith('apex:'))) {
+    const relicId = (id.startsWith('greater:') ? id.slice(8) : id.slice(5)) as RelicId, relic = relicOf(relicId);
+    const before = relicTierLevel(run, relicId), after = id.startsWith('greater:') ? 2 : Math.min(3, before + 1);
+    const next = structuredClone(run); next.tier[relicId] = after;
+    if (!next.inventory.includes(relicId)) { next.inventory.push(relicId); next.relicLevels = { ...next.relicLevels, [relicId]: 1 }; }
+    return { ...relic, id, name: `${after === 3 ? '極位' : '上位'}・${relic.name}`, kind: `段階${before}→${after}`,
+      description: `${run.inventory.includes(relicId) ? relicGrowthDescription(run, relicId) : '未所持'} → ${relicGrowthDescription(next, relicId)} レベル・素数護符の取得回数は保持。旧効果へ重ね掛けしない。` };
+  }
+  if (id.startsWith('apex:')) {
+    const relicId = id.slice(5) as RelicId, relic = relicOf(relicId);
+    return { ...relic, id, name: `極位・${relic.name}`, kind: 'ボス報酬', description: '遺物の段階を上げ、効果を置き換える。極位への進化はLv.5以上。' };
+  }
   if (id === 'skill-upgrade') return {
     id, name: '固有スキル強化', symbol: '✦', kind: 'ボス報酬',
     description: run ? `${characterOf(run.character).skillName}をランク2へ。${skillDescription({ character: run.character, skillRank: 2 })}` : '固有スキルをランク1から2へ強化。術式レベルとは別の成長。',
@@ -112,6 +135,14 @@ export function rewardOf(id: RewardId, run?: Run) {
   }
   const relic = RELICS.find(r => r.id === id);
   if (relic) {
+    if (run?.expansionVersion && run.rewardStep !== 'legacy') {
+      const before = relicLevel(run, relic.id), after = Math.min(10, before + 1), next = structuredClone(run);
+      next.relicLevels = { ...next.relicLevels, [relic.id]: after };
+      if (!next.inventory.includes(relic.id)) next.inventory.push(relic.id);
+      if (primeIds.includes(relic.id)) next.acquisitionRank[relic.id] = Math.min(3, (run.acquisitionRank[relic.id] ?? (before ? 1 : 0)) + 1);
+      return { ...relic, name: `${relic.name} Lv.${before}→${after}`, kind: before ? '遺物強化' : '新しい遺物',
+        description: `${before ? relicGrowthDescription(run, relic.id) : '未所持'} → ${relicGrowthDescription(next, relic.id)}` };
+    }
     if (primeIds.includes(relic.id) && run?.inventory.includes(relic.id)) {
       const nextRank = Math.min(3, (run.acquisitionRank[relic.id] ?? 1) + 1);
       return { ...relic, name: `${relic.name}（取得${nextRank}回目）`, description: `発動確率を${[30, 45, 60][nextRank - 1]}％へ強化。効果と上位段階はそのまま。取得は3回まで。` };

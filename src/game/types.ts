@@ -1,22 +1,24 @@
 export type CharacterId = 'fuse' | 'scribe' | 'lumen';
+export type SkillId = CharacterId | 'bridge' | 'pierce' | 'bastion';
+export type RewardStep = 'legacy' | 'skill' | 'relic';
 export type RelicId = 'wick' | 'echo' | 'rekindle' | 'pen' | 'ward' | 'stroke' | 'battery' | 'amplifier' | 'afterglow' | 'lens' | 'glass' | 'gold' | 'trinity' | 'duality' | 'quint' | 'sept';
 export type PrimeRelicId = 'duality' | 'trinity' | 'quint' | 'sept';
 export type RepeatableRewardId = 'training' | 'vitality' | 'recovery' | 'magic-boon' | 'defense-boon';
 export type GreaterRelicId = 'stroke' | PrimeRelicId | 'lens' | 'wick';
-export type RewardId = RelicId | RepeatableRewardId | 'skill-upgrade' | `greater:${GreaterRelicId}`;
+export type RewardId = RelicId | RepeatableRewardId | 'skill-upgrade' | `greater:${GreaterRelicId}` | `apex:${RelicId}` | `skill:${SkillId}`;
 export type Mark = 'weak' | 'shield' | null;
 export type Phase = 'battle' | 'reward' | 'won' | 'lost';
 export interface FillEvent {
   /** Global sheet identity; absent only in legacy single-sheet reports. */
   sheet?: number; sheetStart?: boolean;
   cell: number; value: number; ordinal: number; source: 'root' | 'echo' | 'chain';
-  units: number[]; mark: Mark; hop?: boolean;
+  units: number[]; mark: Mark; hop?: boolean; bridge?: boolean;
 }
 export interface ChainStep {
   sheet?: number; sheetStart?: boolean;
   from: number | null; cell: number; source: FillEvent['source']; sharedUnits: number[];
   candidateValues: number[]; eligibleCells: number[]; tiedCells: number[]; initiallySingle: boolean;
-  remainingBefore: number; remainingAfter: number; addedAuto: number; hop?: boolean;
+  remainingBefore: number; remainingAfter: number; addedAuto: number; hop?: boolean; bridge?: boolean;
 }
 export interface ChainTrace {
   initialAuto: number; bonuses: { label: string; amount: number }[]; steps: ChainStep[];
@@ -39,7 +41,25 @@ export interface Forecast {
   kill: 'none' | 'possible' | 'guaranteed'; survival: 'none' | 'possible' | 'certain';
   sheetAdvancedCertain: boolean;
 }
+export interface EffectMetric {
+  heldCasts: number; opportunities: number; triggers: number; damage: number;
+  addedInputs: number; fuelGranted: number; fuelUsed: number; mana: number;
+  prevented: number; tokensGranted: number; tokensUsed: number; score: number;
+}
+export interface SkillMetric { uses: number; damage: number; hpDamage: number; overkill: number; level: number }
+export interface BattleLedger {
+  balanceVersion?: 1 | 2;
+  stage: number; boss: boolean; casts: number; damage: number; hpDamage: number; overkill: number; score: number;
+  skills: Partial<Record<SkillId, SkillMetric>>; relics: Partial<Record<RelicId, EffectMetric>>;
+}
+export interface ContributionHistory { sinceCast: number; partial: boolean; battles: BattleLedger[] }
+export interface CastLedger {
+  hpDamage: number; overkill: number; skillId?: SkillId; skillLevel?: number;
+  relics: Partial<Record<RelicId, EffectMetric>>;
+}
 export interface Report {
+  skillId?: SkillId; skillLevel?: number; extraDamage?: number; armorPrevented?: number; armorBroken?: boolean;
+  ledger?: CastLedger; temporaryShield?: number; enemyStyle?: string;
   segments?: SheetSegment[]; sheetsCompleted?: number; freeSkill?: boolean; procs?: PrimeProcOutcome[];
   skill: boolean; path: FillEvent[]; damage: number; attackScore: number;
   shield: number; incoming: number; received: number; healed: number; charge: number;
@@ -57,6 +77,11 @@ export interface Preview extends Report { forecast?: Forecast }
 export interface Run {
   id: string; seed: number; randomState: number; revision: number;
   balanceVersion: 1 | 2; castCounter: number;
+  expansionVersion?: 1; enemyRulesVersion?: 0 | 1;
+  skillLevels?: Partial<Record<SkillId, number>>; equippedSkills?: SkillId[];
+  relicLevels?: Partial<Record<RelicId, number>>;
+  rewardStep?: RewardStep; pendingRelicRewards?: RewardId[];
+  contributions?: ContributionHistory;
   character: CharacterId; skillRank: 1 | 2; stage: number; turn: number; phase: Phase;
   cells: number[]; solution: number[]; givens: boolean[]; marks: Mark[];
   puzzleOrder: number[]; puzzleCursor: number; sheet: number; encounterSheet: number; spellLevel: number;
@@ -68,8 +93,9 @@ export interface Run {
   lastReport: Report | null;
 }
 export type Action =
-  | { type: 'play'; cell: number; skill: boolean; revision: number }
-  | { type: 'reward'; relic: RewardId; revision: number };
+  | { type: 'play'; cell: number; skill: boolean; skillId?: SkillId; revision: number }
+  | { type: 'reward'; relic: RewardId; revision: number }
+  | { type: 'equip'; skills: SkillId[]; revision: number };
 export interface Meta { clears: number; runs: number; wins: number; bestScore: number; bestKills: number; tutorialDone: boolean }
 export interface Settings { sound: boolean; fast: boolean; reducedMotion: boolean }
 export interface Save { version: 1; meta: Meta; run: Run | null; settings: Settings }

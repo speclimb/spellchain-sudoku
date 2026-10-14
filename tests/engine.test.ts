@@ -166,7 +166,7 @@ describe('deterministic actions', () => {
     }
   });
   it('can lose to a counterattack, and never counterattacks after a lethal spell', () => {
-    const save = fixture(); const run = save.run!; run.hp = 1; run.enemyHp = 800; run.stage = 5; run.turn = 2; run.stats.kills = 5;
+    const save = fixture(); const run = save.run!; run.hp = 1; run.enemyHp = 800; run.stage = 5; run.turn = 1; run.stats.kills = 5;
     const root = singles(run.cells).find(i => previewAction(run, i).received > 0)!;
     expect(root).toBeDefined();
     expect(dispatch(save, play(run, root)).run!.phase).toBe('lost');
@@ -192,7 +192,7 @@ describe('deterministic actions', () => {
 describe('progression, rewards and persistence', () => {
   it('retains earned sheet defenses for disconnected final cells and restores them from existing save fields', () => {
     const save = fixture(1), run = save.run!;
-    run.stage = 12; run.stats.kills = 12; run.enemyHp = enemyOf(12).hp; run.spellLevel = 30;
+    run.stage = 12; run.stats.kills = 12; run.enemyRulesVersion = 0; run.enemyHp = enemyOf(12).hp; run.spellLevel = 30;
     run.inventory = ['ward']; run.mana = 8;
     const blanks = run.givens.flatMap((given, cell) => !given && !run.marks[cell] ? [cell] : []);
     const a = blanks[0], b = blanks.find(cell => cell !== a && !PEERS[a].includes(cell))!;
@@ -247,7 +247,7 @@ describe('progression, rewards and persistence', () => {
     expect(defeated.cells).toEqual(defeated.solution);
     expect(sheetShield(defeated)).toBe(defeated.lastReport!.shield);
     expect(sheetShield(parseSave(JSON.stringify(next)).run!)).toBe(defeated.lastReport!.shield);
-    const won = structuredClone(defeated); won.phase = 'won'; won.stage = 5; won.stats.kills = 6;
+    const won = structuredClone(defeated); won.rewardStep = undefined; won.phase = 'won'; won.stage = 5; won.stats.kills = 6;
     expect(sheetShield(won)).toBe(defeated.lastReport!.shield);
     expect(sheetShield(parseSave(JSON.stringify({ ...save, run: won })).run!)).toBe(defeated.lastReport!.shield);
   });
@@ -284,7 +284,7 @@ describe('progression, rewards and persistence', () => {
   it('keeps offering deterministic repeatable rewards as the unique relic pool runs out', () => {
     for (const missing of [2, 1, 0]) {
       const save = fixture(43), run = save.run!;
-      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); for (const id of primeIds) run.acquisitionRank[id] = 3; run.enemyHp = 1;
+      run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); run.relicLevels = Object.fromEntries(run.inventory.map(id => [id,10])); for (const id of primeIds) run.acquisitionRank[id] = 3; run.enemyHp = 1;
       const next = dispatch(save, play(run));
       expect(next.run!.phase).toBe('reward'); expect(next.run!.stats.kills).toBe(13);
       expect(next.run!.rewards).toHaveLength(3); expect(new Set(next.run!.rewards).size).toBe(3);

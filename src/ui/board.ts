@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { candidates, UNITS } from '../game/sudoku';
-import type { FillEvent, Report, Run, Settings } from '../game/types';
+import type { FillEvent, Report, Run, Settings, SkillId } from '../game/types';
 import { boardView, fillSheet, originView } from './board-view';
 
 interface Model { run: Run; prediction: Report | null; selected: number | null; skill: boolean; busy: boolean; inspect?: number | null; legal?: Set<number>; longest?: Set<number> }
@@ -214,9 +214,9 @@ export class Board {
     });
     requestAnimationFrame(() => this.game?.scale.refresh());
   }
-  set(run: Run, prediction: Report | null, selected: number | null, skill: boolean, busy = false, inspect: number | null = null): void {
+  set(run: Run, prediction: Report | null, selected: number | null, skill: boolean, busy = false, inspect: number | null = null, skillId?: SkillId): void {
     if (!busy && this.scene.ready) this.scene.clearEffects();
-    const origins = originView(run, skill, busy);
+    const origins = originView(run, skill, busy, skillId);
     this.scene.model = { run, prediction, selected, skill, busy, inspect, ...origins }; this.scene.draw();
     if (inspect === null) delete this.host.dataset.inspectStep;
     else this.host.dataset.inspectStep = String(inspect);

@@ -9,6 +9,14 @@ function fixture(seed = 71, character: CharacterId = 'fuse'): Save {
   const save = newSave(); save.meta.clears = 99;
   return startRun(save, character, seed);
 }
+
+/** Reconstruct the pre-expansion rules explicitly for compatibility assertions. */
+function legacyRun(run: Run): Run {
+  delete run.expansionVersion; delete run.enemyRulesVersion; delete run.skillLevels;
+  delete run.equippedSkills; delete run.relicLevels; delete run.rewardStep;
+  delete run.pendingRelicRewards; delete run.contributions;
+  return run;
+}
 function boardWith(blanks: number[], character: CharacterId = 'fuse'): Run {
   const run = fixture(71, character).run!;
   run.cells = [...run.solution]; blanks.forEach(cell => { run.cells[cell] = 0; });
@@ -23,7 +31,7 @@ function digitAt(run: Run, cell: number, digit: number): void {
 const play = (run: Run, cell = singles(run.cells)[0], skill = false) => ({ type: 'play' as const, cell, skill, revision: run.revision });
 const choose = (run: Run, relic: RewardId) => resolveAction(run, { type: 'reward', relic, revision: run.revision });
 function rewardFixture(stage: number, seed = 71): Run {
-  const run = fixture(seed).run!;
+  const run = legacyRun(fixture(seed).run!);
   run.stage = stage; run.stats.kills = stage; run.enemyHp = 1;
   return resolveAction(run, play(run));
 }
@@ -141,7 +149,7 @@ describe('Trinity ranks and deterministic per-cast uncertainty', () => {
   });
 });
 
-describe('boss milestones, duplicate caps and skill growth', () => {
+describe('legacy boss reward compatibility and intrinsic rank growth', () => {
   it.each([4, 9, 14])('offers a skill upgrade and two Greater rewards including a build-defining upgrade after encounter index %i', stage => {
     const run = rewardFixture(stage);
     expect(run.rewards).toHaveLength(3);
@@ -151,13 +159,13 @@ describe('boss milestones, duplicate caps and skill growth', () => {
     expect(new Set(run.rewards).size).toBe(3);
   });
   it('offers training and the two boons when every Greater family is owned', () => {
-    const run = fixture().run!; run.stage = 9; run.stats.kills = 9; run.enemyHp = 1;
+    const run = legacyRun(fixture().run!); run.stage = 9; run.stats.kills = 9; run.enemyHp = 1;
     run.skillRank = 2; run.inventory = [...greaterIds]; run.tier = Object.fromEntries(greaterIds.map(id => [id, 2])); run.acquisitionRank.trinity = 3;
     const reward = resolveAction(run, play(run));
     expect([...reward.rewards].sort()).toEqual(['defense-boon', 'magic-boon', 'training']);
   });
   it('allows Trinity duplicates only through rank three, while excluding capped and one-copy relics', () => {
-    const run = fixture().run!; run.inventory = [...run.pool]; run.enemyHp = 1;
+    const run = legacyRun(fixture().run!); run.inventory = [...run.pool]; run.enemyHp = 1;
     for (const id of primeIds.filter(id => id !== 'trinity')) run.acquisitionRank[id] = 3;
     expect(run.pool).toContain('trinity');
     const rankOne = resolveAction(run, play(run));

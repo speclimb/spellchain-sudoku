@@ -1,0 +1,41 @@
+/* Counterattack silhouettes remain behind the exact damage readout. */
+.enemy-attack-art{display:none;position:absolute;left:var(--fx-x);top:var(--fx-y);width:min(620px,100vw);height:auto;transform:translate(-50%,-48%);overflow:visible;stroke:var(--enemy-color,#ffcda1);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 10px var(--enemy-glow,#ff865b88));opacity:.9}
+.combat-effects[data-phase=counter] .enemy-attack-art,.combat-effects[data-phase=charge] .enemy-attack-art{display:block}
+.combat-effects[data-enemy-style][data-phase=counter] .combat-slash{display:none}
+.combat-effects .combat-readout{z-index:2}
+.combat-effects[data-enemy-style=fireball]{--enemy-color:#ffe0a2;--enemy-glow:#ff7434aa}
+.combat-effects[data-enemy-style=feathers]{--enemy-color:#bde5ff;--enemy-glow:#5bbbed99}
+.combat-effects[data-enemy-style=pillars]{--enemy-color:#ebdba1;--enemy-glow:#d8b862aa}
+.combat-effects[data-enemy-style=ray]{--enemy-color:#edbdff;--enemy-glow:#c17dfaaa}
+.combat-effects[data-enemy-style=absorption]{--enemy-color:#d5baff;--enemy-glow:#ab67fcaa}
+.combat-effects[data-enemy-style=breath]{--enemy-color:#ffe7ba;--enemy-glow:#fd9253aa}
+.combat-effects[data-enemy-style=frost]{--enemy-color:#c7faff;--enemy-glow:#5bcdeb88}
+.combat-effects[data-enemy-style=mirror]{--enemy-color:#e3dcff;--enemy-glow:#b895fd88}
+.enemy-fire-tail{fill:#ff833855;stroke:#ffc17c;transform-origin:350px 190px;animation:enemy-fireball .36s ease-out both}
+.enemy-fire-orb{fill:#ff9c3b88;transform-origin:356px 190px;animation:enemy-fireball .36s ease-out both}.enemy-fire-orb circle:last-child{fill:#fff1c4;stroke:#fffbe0}
+.enemy-feather{fill:#96ceea77;animation:enemy-feather .36s ease-out both}.feather-two{animation-delay:30ms}.feather-three{animation-delay:60ms}
+.enemy-pillar{fill:#bba16955;transform-origin:300px 335px;animation:enemy-pillar .36s ease-out both}.pillar-one,.pillar-three{animation-delay:35ms}
+.enemy-ray-eye{fill:#a466d444;transform-origin:300px 93px;animation:enemy-eye .36s ease-out both}.enemy-eye-ray{fill:#e6b8ff88;stroke:#fff1ff;transform-origin:300px 93px;animation:enemy-ray .36s ease-out both}.enemy-eye-ray path:nth-child(2){stroke-width:7}
+.enemy-absorb-rings{stroke:#b892e8;transform-origin:300px 185px;animation:enemy-absorption .36s ease-in both}.enemy-absorb-stars{fill:#ebdcff;transform-origin:300px 185px;animation:enemy-absorption .36s ease-in both}.enemy-absorb-core{fill:#22163de0;transform-origin:300px 185px;animation:enemy-dark-star .36s ease-out both}
+.enemy-breath-source{fill:#743f3555}.enemy-dragon-breath{fill:#ff81435c;stroke:#ffc687;transform-origin:279px 86px;animation:enemy-breath .36s ease-out both}.enemy-dragon-breath path:nth-child(2){fill:#ffd38d88;stroke:#ffe6b1}.enemy-dragon-breath path:last-child{stroke:#fff0ce;stroke-width:8}
+.enemy-frost-charge{display:none;stroke:#bcf6ff;transform-origin:300px 177px}.enemy-frost-claws{fill:#b9faffaa;stroke:#eeffff;animation:enemy-frost .36s ease-out both}
+.enemy-mirror-shards{fill:#bdabf26b;transform-origin:300px 177px;animation:enemy-mirror .36s ease-out both}.enemy-mirror-shards path:last-child{stroke:#fff0ff}
+.combat-effects[data-phase=charge]{--fx-color:#c4f5ff;--fx-soft:#67e2f333}
+.combat-effects[data-phase=charge] .combat-chain{display:none}.combat-effects[data-phase=charge] .combat-number,.combat-effects[data-phase=charge] .combat-shield{display:block}
+.combat-effects[data-phase=charge] .combat-caption{border-color:#93ddeb88;color:#d5faff;background:#132d42ee}
+.combat-effects[data-phase=charge] .enemy-frost-charge{display:block;animation:enemy-charge .36s ease-out both}.combat-effects[data-phase=charge] .enemy-frost-claws{display:none}
+.combat-effects[data-blocked=true] .enemy-attack-art{opacity:.48}
+.combat-effects.fx-fast .enemy-attack-art *{animation-duration:100ms;animation-delay:0ms}
+.combat-effects.fx-still .enemy-attack-art *{animation:none!important}.combat-effects.fx-still .enemy-attack-art{opacity:.36}
+@media(prefers-reduced-motion:reduce){.enemy-attack-art *{animation:none!important}.enemy-attack-art{opacity:.36}}
+@keyframes enemy-fireball{0%{opacity:0;transform:translate(-145px,-95px) scale(.55)}45%{opacity:1}100%{opacity:.55;transform:translate(20px,15px) scale(1.1)}}
+@keyframes enemy-feather{0%{opacity:0;transform:translate(-65px,-115px)}40%{opacity:1}100%{opacity:.5;transform:translate(30px,55px)}}
+@keyframes enemy-pillar{0%{opacity:0;transform:scaleY(.05)}45%{opacity:1;transform:scaleY(1.06)}100%{opacity:.55;transform:scaleY(1)}}
+@keyframes enemy-eye{0%{opacity:.1;transform:scale(.6)}35%,100%{opacity:.75;transform:scale(1)}}
+@keyframes enemy-ray{0%,20%{opacity:0;transform:scaleX(.08)}45%{opacity:1;transform:scaleX(1.15)}100%{opacity:.65;transform:scaleX(1)}}
+@keyframes enemy-absorption{0%{opacity:.2;transform:scale(1.25) rotate(-8deg)}35%{opacity:1}100%{opacity:.3;transform:scale(.32) rotate(18deg)}}
+@keyframes enemy-dark-star{0%{opacity:.35;transform:scale(.5) rotate(-20deg)}100%{opacity:.9;transform:scale(1.12) rotate(12deg)}}
+@keyframes enemy-breath{0%{opacity:0;transform:scale(.2)}40%{opacity:.95}100%{opacity:.5;transform:scale(1.07)}}
+@keyframes enemy-frost{0%{opacity:0;transform:translate(-90px,-65px)}45%{opacity:1}100%{opacity:.5;transform:translate(15px,20px)}}
+@keyframes enemy-mirror{0%{opacity:0;transform:scale(.4) rotate(-25deg)}40%{opacity:1}100%{opacity:.6;transform:scale(1.1) rotate(8deg)}}
+@keyframes enemy-charge{0%{opacity:.2;transform:scale(.65)}100%{opacity:.7;transform:scale(1)}}

@@ -35,7 +35,7 @@ async function lateSheet(page: Page, remaining: 1 | 2, ward: boolean): Promise<{
     save.meta.clears = 8;
     save.meta.tutorialDone = true;
     const run = save.run;
-    run.stage = 8; run.balanceVersion = 1;
+    run.stage = 8; run.balanceVersion = 1; run.enemyRulesVersion = 0;
     run.stats.kills = 8;
     run.turn = 2; // The next attack is the third-turn heavy counter.
     run.sheet = 9;
