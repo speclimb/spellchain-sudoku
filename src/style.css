@@ -259,3 +259,22 @@
   .game-layout{gap:4px}
   .tutorial button{line-height:1;min-height:24px}
 }
+
+/* A short, non-destructive introduction beside the title's start/resume action. */
+.hero-main-actions{display:flex;align-items:stretch;flex-wrap:wrap;gap:10px}
+.home-help{display:flex;align-items:center;justify-content:center;gap:9px;min-height:49px;padding:12px 17px;background:#182638;color:#d7e3e8;border-color:#52726d}
+.home-help>span{display:grid;place-items:center;width:21px;height:21px;border:1px solid #7da99d;border-radius:50%;color:var(--green);font-size:12px}
+.quick-help{overscroll-behavior:contain}
+.quick-help .modal-close{min-width:44px;min-height:44px;right:8px;top:5px}
+.quick-help-flow{text-align:center;color:var(--green);font-size:12px;line-height:1.8;margin-top:13px}
+.quick-help-flow>span{margin:0 5px;color:#7b8b9b}
+.quick-help .help-steps{margin:24px 0 19px}
+.quick-help .help-steps li{margin-bottom:15px}
+.quick-help .help-steps strong{font-size:14px}
+.quick-help .help-steps p{font-size:12px;line-height:1.85;color:#b7c3d5;margin-top:4px}
+.quick-help .help-note{padding:12px 14px;color:#afbed0}
+.quick-help-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:18px}
+.quick-help-actions>button{min-height:44px}
+@media(max-width:370px){.quick-help-flow{font-size:11px}.quick-help-flow>span{margin:0 2px}.quick-help .help-steps strong{font-size:13px}}
+/* Keep decorative rings inside the title on narrower screens. */
+@media(max-width:1000px){.home-hero{overflow-x:clip}}
