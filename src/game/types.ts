@@ -78,6 +78,8 @@ export interface Run {
   id: string; seed: number; randomState: number; revision: number;
   balanceVersion: 1 | 2; castCounter: number;
   expansionVersion?: 1; enemyRulesVersion?: 0 | 1;
+  /** Missing/zero preserves the HP of an already-started pre-rebalance battle. */
+  enemyHealthVersion?: 0 | 1;
   skillLevels?: Partial<Record<SkillId, number>>; equippedSkills?: SkillId[];
   relicLevels?: Partial<Record<RelicId, number>>;
   rewardStep?: RewardStep; pendingRelicRewards?: RewardId[];

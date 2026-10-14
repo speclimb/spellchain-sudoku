@@ -83,6 +83,11 @@ export function rollSkillRewards(run: Run, random: Random): RewardId[] {
  * receive one guaranteed slot while those categories remain available. */
 export function rollRelicRewards(run: Run, random: Random): RewardId[] {
   const context: Run = { ...run, rewardStep: 'relic' };
+  // Keep the cross-sheet path visible in newly rolled growth rewards. It uses
+  // the existing missing/owned slot, remains optional, and never rewrites saves.
+  const wickOffer: RewardId | undefined = run.expansionVersion && run.balanceVersion === 2 && run.rewardStep !== 'legacy'
+    ? run.inventory.includes('wick') ? 'greater:wick' : run.stage >= 2 ? 'wick' : undefined
+    : undefined;
   const candidates: RewardId[] = [];
   for (const relic of run.pool) {
     const variants: RewardId[] = [relic];
@@ -91,16 +96,19 @@ export function rollRelicRewards(run: Run, random: Random): RewardId[] {
       else variants.push(`apex:${relic}`);
     }
     const eligible = variants.filter(id => canTakeReward(context, id));
-    if (eligible.length) candidates.push(random.shuffle(eligible)[0]);
+    if (eligible.length) {
+      const sampled = random.shuffle(eligible)[0];
+      candidates.push(wickOffer && eligible.includes(wickOffer) ? wickOffer : sampled);
+    }
   }
   if (!candidates.length && isBoss(run)) return random.shuffle<RewardId>(['training', 'magic-boon', 'defense-boon']);
   const available = random.shuffle(candidates);
   const relicIdOf = (id: RewardId) => (id.startsWith('greater:') ? id.slice(8) : id.startsWith('apex:') ? id.slice(5) : id) as RelicId;
   const missingCandidates = available.filter(id => isRelicId(run, id) && !run.inventory.includes(id));
   const affinityIds = characterOf(run.character).affinity;
-  const missing = missingCandidates.find(id => affinityIds.includes(id as RelicId)) ?? missingCandidates[0];
+  const missing = missingCandidates.find(id => id === wickOffer) ?? missingCandidates.find(id => affinityIds.includes(id as RelicId)) ?? missingCandidates[0];
   const upgradeCandidates = available.filter(id => run.inventory.includes(relicIdOf(id)));
-  const upgrade = upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0];
+  const upgrade = upgradeCandidates.find(id => id === wickOffer) ?? upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0];
   const chosen = [missing, upgrade].filter((id): id is RewardId => id !== undefined);
   chosen.push(...available.filter(id => !chosen.includes(id)).slice(0, 3 - chosen.length));
   return fillChoices(chosen, random);

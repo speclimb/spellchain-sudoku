@@ -1,5 +1,5 @@
 import bank from './puzzles.json';
-import { CHARACTERS, RELICS, enemyOf } from './content';
+import { CHARACTERS, RELICS } from './content';
 import { canTakeReward, rollRewards, rollSkillRewards, rollRelicRewards, applyGrowthReward } from './rewards';
 import { skillLevel, selectedSkill, skillValues, relicValues } from './growth';
 import { enemyForRun, enemyIncoming, applyEnemyArmor } from './enemies';
@@ -72,7 +72,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
   const next = structuredClone(save), random = new Random(seed);
   const run: Run = {
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0, balanceVersion: 2, castCounter: 0,
-    expansionVersion: 1, enemyRulesVersion: 1, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
+    expansionVersion: 1, enemyRulesVersion: 1, enemyHealthVersion: 1, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
     character, skillRank: 1, stage: 0, turn: 0, phase: 'battle', cells: [], solution: [], givens: [], marks: [],
     puzzleOrder: random.shuffle(bank.map((_, i) => i)), puzzleCursor: 0, sheet: 1, encounterSheet: 1, spellLevel: 1,
     freeSkillTokens: 0, reservedAuto: 0, boons: { defense: 0, magic: 0 },
@@ -80,7 +80,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
     pool: RELICS.filter(r => r.unlock <= save.meta.clears).map(r => r.id), rewards: [], afterglow: false,
     stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0, sheets: 0 }, lastReport: null,
   };
-  prepareBoard(run, random); run.enemyHp = enemyOf(0, run.balanceVersion).hp; run.randomState = random.state;
+  prepareBoard(run, random); run.enemyHp = enemyForRun(run).hp; run.randomState = random.state;
   next.run = run; next.meta.runs++;
   return next;
 }
@@ -416,8 +416,8 @@ export function resolveAction(source: Run, action: Action): Run {
       run.lastReport = null; run.rewardStep = 'relic'; run.rewards = run.pendingRelicRewards ?? []; run.pendingRelicRewards = [];
       if (run.rewards.length !== 3) throw new Error('次の遺物報酬を読み込めません。');
     } else {
-    run.stage++; run.balanceVersion = 2; run.enemyRulesVersion = run.expansionVersion ? 1 : 0; nextBoard(run, random); run.encounterSheet = 1;
-    run.enemyHp = enemyOf(run.stage, run.balanceVersion).hp;
+    run.stage++; run.balanceVersion = 2; run.enemyRulesVersion = run.expansionVersion ? 1 : 0; run.enemyHealthVersion = 1; nextBoard(run, random); run.encounterSheet = 1;
+    run.enemyHp = enemyForRun(run).hp;
     if (run.boons.magic) run.mana = 8;
     run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null; run.rewardStep = undefined; run.pendingRelicRewards = [];
     }

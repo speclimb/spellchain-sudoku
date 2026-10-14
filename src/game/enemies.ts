@@ -4,7 +4,7 @@ import type { Run } from './types';
 export type EnemySymbol = 'ember' | 'wing' | 'guardian' | 'eye' | 'star' | 'dragon' | 'frost' | 'mirror';
 export type EnemyAttackStyle = 'fireball' | 'feathers' | 'pillars' | 'ray' | 'absorption' | 'breath' | 'frost' | 'mirror';
 export type EnemyPattern = 'steady' | 'third-heavy' | 'charge-strike';
-type EnemyRun = Pick<Run, 'stage' | 'balanceVersion' | 'enemyRulesVersion'>;
+type EnemyRun = Pick<Run, 'stage' | 'balanceVersion' | 'enemyRulesVersion' | 'enemyHealthVersion'>;
 type IntentRun = EnemyRun & Pick<Run, 'turn'>;
 type EnemyBase = ReturnType<typeof enemyOf>;
 export interface Enemy extends Omit<EnemyBase, 'symbol'> {
@@ -33,9 +33,20 @@ const EXTRA_ENEMIES = [
 const ORDINARY_CYCLE = [0, 1, 2, 3, 6, 7] as const;
 const cap = (value: number) => Math.min(Number.MAX_SAFE_INTEGER, value);
 
+/** Fixed encounter progression, independent of inventory, level, damage or HP.
+ * The opening fifteen encounters retain their original HP. Beyond that, ordinary
+ * enemies grow gently while milestones can withstand more of a long spell.
+ */
+export function enemyHealthAt(stage: number): number {
+  const base = enemyOf(stage, 2), depth = Math.max(0, stage + 1 - 15);
+  const multiplier = base.isBoss ? 1 + .04 * depth + .0015 * depth ** 2 : 1 + .012 * depth;
+  return cap(Math.round(base.hp * multiplier));
+}
+
 /** HP/attack balance and enemy rules are versioned independently for saved battles. */
-export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVersion: 0 | 1 = 1): Enemy {
+export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVersion: 0 | 1 = 1, enemyHealthVersion: 0 | 1 = 1): Enemy {
   const old = enemyOf(stage, balanceVersion);
+  const hp = balanceVersion === 2 && enemyHealthVersion === 1 ? enemyHealthAt(stage) : old.hp;
   let identity = { name: old.name, title: old.title, symbol: old.symbol as EnemySymbol, lore: old.lore };
   let archetypeIndex = old.archetypeIndex;
   if (enemyRulesVersion === 1 && !old.isBoss) {
@@ -52,12 +63,12 @@ export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVers
   const behavior = pattern === 'charge-strike' ? '溜め（攻撃0）と2倍の突進を交互に行う。'
     : armor ? '被ダメージ20％軽減。行・列・区画を1つ完成すると、その詠唱中だけ解除。'
     : pattern === 'third-heavy' ? '毎手反撃。3手ごとに攻撃力が2倍になる。' : '毎手、同じ攻撃力で反撃する。';
-  return { ...old, ...identity, ...ATTACKS[identity.symbol], archetypeIndex, strongEvery, pattern, armor, behavior };
+  return { ...old, hp, ...identity, ...ATTACKS[identity.symbol], archetypeIndex, strongEvery, pattern, armor, behavior };
 }
 
 /** Missing rules mean a saved, already-started legacy encounter. */
 export function enemyForRun(run: EnemyRun): Enemy {
-  return enemyAt(run.stage, run.balanceVersion, run.enemyRulesVersion ?? 0);
+  return enemyAt(run.stage, run.balanceVersion, run.enemyRulesVersion ?? 0, run.enemyHealthVersion ?? 0);
 }
 function attackOn(enemy: Enemy, turn: number): number {
   if (enemy.pattern === 'charge-strike') return turn % 2 === 0 ? 0 : cap(enemy.attack * 2);

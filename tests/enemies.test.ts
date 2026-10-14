@@ -7,11 +7,11 @@ import { enemyEmblem } from '../src/ui/enemy-art';
 const encounter = (stage: number, turn = 0, enemyRulesVersion: 0 | 1 = 1) => ({ stage, turn, balanceVersion: 2 as const, enemyRulesVersion });
 
 describe('versioned enemy identities and patterns', () => {
-  it('preserves the opening four, every fifth boss and the established HP/attack curve', () => {
+  it('preserves the opening four, every fifth boss and the versioned legacy HP/attack curve', () => {
     expect([0, 1, 2, 3].map(stage => enemyAt(stage).symbol)).toEqual(['ember', 'wing', 'guardian', 'eye']);
     expect([4, 9, 14, 19].map(stage => enemyAt(stage).symbol)).toEqual(['star', 'dragon', 'star', 'dragon']);
     for (let stage = 0; stage < 200; stage++) {
-      const enemy = enemyAt(stage), previous = enemyOf(stage);
+      const enemy = enemyAt(stage, 2, 1, 0), previous = enemyOf(stage);
       expect(enemy.hp).toBe(previous.hp); expect(enemy.attack).toBe(previous.attack);
       expect(enemy.isBoss).toBe((stage + 1) % 5 === 0);
     }

@@ -4,7 +4,7 @@ import bank from './puzzles.json';
 import { canTakeReward } from './rewards';
 import { newSave } from './engine';
 import { relicValues, skillValues } from './growth';
-import { applyEnemyArmor } from './enemies';
+import { applyEnemyArmor, enemyForRun } from './enemies';
 import type { Run, Save, RelicId } from './types';
 export const SAVE_KEY = 'chain-incantation.save.v1';
 const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
@@ -29,6 +29,7 @@ export function parseSave(raw: string): Save {
     if (r.reservedAuto === undefined) r.reservedAuto = 0;
     if (r.boons === undefined) r.boons = { defense: 0, magic: 0 };
     if (r.balanceVersion === undefined) r.balanceVersion = 1;
+    if (r.enemyHealthVersion === undefined) r.enemyHealthVersion = 0;
     if (r.skillRank === undefined) r.skillRank = 1;
     if (r.manaOverflow === undefined) r.manaOverflow = 0;
     if (r.acquisitionRank === undefined) r.acquisitionRank = {};
@@ -53,8 +54,8 @@ export function parseSave(raw: string): Save {
       || (r.phase !== 'reward' && (r.rewardStep !== undefined || r.pendingRelicRewards.length))
       || (r.rewardStep === 'skill' && ((r.stage+1)%5 !== 0 || r.pendingRelicRewards.length !== 3))
       || (r.rewardStep !== 'skill' && r.pendingRelicRewards.length)) throw new Error('スキルと報酬段階の記録が不正です。');
-    if (![1, 2].includes(r.balanceVersion) || ![1, 2].includes(r.skillRank) || !integer(r.manaOverflow, 0, 8)) throw new Error('成長の記録が不正です。');
-    if (!integer(r.seed, 0, 0xffffffff) || !integer(r.randomState, 0, 0xffffffff) || !integer(r.revision) || !integer(r.stage) || !integer(r.turn) || !integer(r.maxHp, 1) || !integer(r.hp, 0, r.maxHp) || !integer(r.mana, 0, 8) || !integer(r.enemyHp, 0, enemyOf(r.stage, r.balanceVersion).hp) || !integer(r.score)) throw new Error('冒険の数値が不正です。');
+    if (![1, 2].includes(r.balanceVersion) || ![0, 1].includes(r.enemyHealthVersion) || ![1, 2].includes(r.skillRank) || !integer(r.manaOverflow, 0, 8)) throw new Error('成長の記録が不正です。');
+    if (!integer(r.seed, 0, 0xffffffff) || !integer(r.randomState, 0, 0xffffffff) || !integer(r.revision) || !integer(r.stage) || !integer(r.turn) || !integer(r.maxHp, 1) || !integer(r.hp, 0, r.maxHp) || !integer(r.mana, 0, 8) || !integer(r.enemyHp, 0, enemyForRun(r as Run).hp) || !integer(r.score)) throw new Error('冒険の数値が不正です。');
     // The original v1 run stored six future boards. Keep that prefix, its current
     // board, HP and reward roll intact, then append all unused sources with a
     // separate deterministic stream so migration never rerolls combat/rewards.
