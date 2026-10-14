@@ -43,6 +43,26 @@ function rollLegacyRewards(run: Run, random: Random): RewardId[] {
 const isBoss = (run: Run) => run.balanceVersion === 2 && (run.stage + 1) % 5 === 0;
 const basicRepeatables: RewardId[] = ['training', 'vitality', 'recovery'];
 function isRelicId(run: Run, value: string): value is RelicId { return run.pool.includes(value as RelicId); }
+const isEvolution = (id: RewardId) => id.startsWith('greater:') || id.startsWith('apex:');
+const relicIdOf = (id: RewardId) => (id.startsWith('greater:') ? id.slice(8) : id.startsWith('apex:') ? id.slice(5) : id) as RelicId;
+
+/** Conditional weight against one level-up, only after evolution eligibility.
+ * A capped level-up is removed first, so an eligible Lv.10 evolution is certain. */
+function evolutionWeight(level: number): number { return level < 3 ? 2 : level < 5 ? 3 : level < 8 ? 4 : 5; }
+
+/** Inputs are already shuffled. Equal weights keep that order and consume no
+ * extra draw, preserving initial unowned rolls and single-candidate guarantees. */
+function weightedChoice(candidates: RewardId[], weightOf: (id: RewardId) => number, random: Random): RewardId | undefined {
+  if (!candidates.length) return undefined;
+  const weights = candidates.map(weightOf);
+  if (weights.every(weight => weight === weights[0])) return candidates[0];
+  let target = random.next() * weights.reduce((total, weight) => total + weight, 0);
+  for (let i = 0; i < candidates.length; i++) {
+    target -= weights[i];
+    if (target < 0) return candidates[i];
+  }
+  return candidates[candidates.length - 1];
+}
 
 /** Already sampled legacy choices keep their original eligibility and meaning. */
 export function canTakeReward(run: Run, id: RewardId): boolean {
@@ -83,6 +103,7 @@ export function rollSkillRewards(run: Run, random: Random): RewardId[] {
  * receive one guaranteed slot while those categories remain available. */
 export function rollRelicRewards(run: Run, random: Random): RewardId[] {
   const context: Run = { ...run, rewardStep: 'relic' };
+  const boss = isBoss(run);
   // Keep the cross-sheet path visible in newly rolled growth rewards. It uses
   // the existing missing/owned slot, remains optional, and never rewrites saves.
   const wickOffer: RewardId | undefined = run.expansionVersion && run.balanceVersion === 2 && run.rewardStep !== 'legacy'
@@ -91,26 +112,39 @@ export function rollRelicRewards(run: Run, random: Random): RewardId[] {
   const candidates: RewardId[] = [];
   for (const relic of run.pool) {
     const variants: RewardId[] = [relic];
-    if (isBoss(run) && run.inventory.includes(relic)) {
+    if (boss && run.inventory.includes(relic)) {
       if (greaterIds.includes(relic as GreaterRelicId) && relicTierLevel(run, relic) === 1) variants.push(`greater:${relic as GreaterRelicId}`);
       else variants.push(`apex:${relic}`);
     }
     const eligible = variants.filter(id => canTakeReward(context, id));
     if (eligible.length) {
-      const sampled = random.shuffle(eligible)[0];
+      // Two eligible variants consume the same one reward-stream draw as the
+      // former shuffle, including when wick's guaranteed offer overrides it.
+      const evolution = eligible.find(isEvolution);
+      const weight = evolutionWeight(relicLevel(run, relic));
+      const sampled = eligible.length === 2 && evolution
+        ? random.next() < weight / (weight + 1) ? evolution : relic
+        : eligible[0];
       candidates.push(wickOffer && eligible.includes(wickOffer) ? wickOffer : sampled);
     }
   }
   if (!candidates.length && isBoss(run)) return random.shuffle<RewardId>(['training', 'magic-boon', 'defense-boon']);
   const available = random.shuffle(candidates);
-  const relicIdOf = (id: RewardId) => (id.startsWith('greater:') ? id.slice(8) : id.startsWith('apex:') ? id.slice(5) : id) as RelicId;
   const missingCandidates = available.filter(id => isRelicId(run, id) && !run.inventory.includes(id));
   const affinityIds = characterOf(run.character).affinity;
   const missing = missingCandidates.find(id => id === wickOffer) ?? missingCandidates.find(id => affinityIds.includes(id as RelicId)) ?? missingCandidates[0];
   const upgradeCandidates = available.filter(id => run.inventory.includes(relicIdOf(id)));
-  const upgrade = upgradeCandidates.find(id => id === wickOffer) ?? upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0];
+  const upgrade = upgradeCandidates.find(id => id === wickOffer) ?? (boss
+    ? weightedChoice(upgradeCandidates, id => (isEvolution(id) ? 2 : 1) * (affinityIds.includes(relicIdOf(id)) ? 1.35 : 1), random)
+    : upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0]);
   const chosen = [missing, upgrade].filter((id): id is RewardId => id !== undefined);
-  chosen.push(...available.filter(id => !chosen.includes(id)).slice(0, 3 - chosen.length));
+  const remaining = available.filter(id => !chosen.includes(id));
+  while (chosen.length < 3 && remaining.length) {
+    // The flexible slot modestly favors owned growth in ordinary battles;
+    // bosses instead favor eligible evolutions. New acquisition keeps its slot.
+    const next = weightedChoice(remaining, id => boss ? isEvolution(id) ? 2 : 1 : run.inventory.includes(relicIdOf(id)) ? 1.35 : 1, random)!;
+    chosen.push(next); remaining.splice(remaining.indexOf(next), 1);
+  }
   return fillChoices(chosen, random);
 }
 export function rollRewards(run: Run, random: Random): RewardId[] {

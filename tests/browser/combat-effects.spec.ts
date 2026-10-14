@@ -1,3 +1,4 @@
+import { savedText, resetHistoryDatabase } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Report, Run, Save } from '../../src/game/types';
 
@@ -8,6 +9,7 @@ type FixtureKind = 'hit' | 'block' | 'sheet';
 /** Browser contexts are isolated, so these fixtures never overwrite a player's save. */
 async function prepareCombat(page: Page, kind: FixtureKind, settings: { fast?: boolean; reducedMotion?: boolean } = {}): Promise<{ cell: number; report: Report; before: Run }> {
   await page.goto('/');
+  await resetHistoryDatabase(page);
   const fixture = await page.evaluate(async ({ key, kind, settings }) => {
     const enginePath = '/src/game/engine.ts';
     const sudokuPath = '/src/game/sudoku.ts';
@@ -55,7 +57,7 @@ async function prepareCombat(page: Page, kind: FixtureKind, settings: { fast?: b
 }
 
 async function saved(page: Page): Promise<Save> {
-  return page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  return savedText(page, key).then(raw => JSON.parse(raw!));
 }
 
 /** Short presentation phases need a steady poll, rather than retry backoff. */

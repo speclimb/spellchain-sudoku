@@ -13,7 +13,10 @@ const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is numbe
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
 const vector = (v: unknown, length: number, check: (v: any) => boolean) => Array.isArray(v) && v.length === length && v.every(check);
 export function parseSave(raw: string): Save {
-  const data: unknown = JSON.parse(raw);
+  return parseSaveData(JSON.parse(raw));
+}
+/** Also validates structured-cloned IndexedDB data without serializing the archive. */
+export function parseSaveData(data: unknown): Save {
   if (!record(data) || data.version !== 1 || !record(data.meta) || !record(data.settings)) throw new Error('保存形式を読み込めません。');
   if (!['clears', 'runs', 'wins', 'bestScore'].every(k => integer(data.meta[k])) || typeof data.meta.tutorialDone !== 'boolean' || !['sound', 'fast', 'reducedMotion'].every(k => typeof data.settings[k] === 'boolean')) throw new Error('記録が破損しています。');
   if (data.meta.bestKills !== undefined && !integer(data.meta.bestKills)) throw new Error('記録が破損しています。');

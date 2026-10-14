@@ -3,7 +3,7 @@ import { enemyForRun } from './enemies';
 import { relicLevel, relicTierLevel } from './growth';
 import type { Action, BattleLedger, CharacterId, EffectMetric, Phase, PrimeProcOutcome, RelicId, RewardId, Run, Save, SkillId } from './types';
 
-export const HISTORY_LIMITS = { runs: 3, battles: 60, casts: 600, bytes: 750 * 1024 } as const;
+export const HISTORY_LIMITS = { runs: 10, battles: 1000, casts: 100000, bytes: 256 * 1024 * 1024 } as const;
 export interface HistoryEffect { level: number; tier: number; metric: Partial<EffectMetric> }
 export interface HistoryCast {
   /** Monotonic run-wide committed cast number. Cross-sheet segments share this ID. */
@@ -32,6 +32,12 @@ export const emptyHistory = (): PlayHistory => ({ version: 1, runs: [], omittedR
 export const historyKey = (save: Save, run = save.run): string => `${run?.id ?? ''}/${save.meta.runs}`;
 export const historyBytes = (history: PlayHistory): number => JSON.stringify(history).length * 2;
 
+/** Copy-on-write: archived casts are immutable and never cloned on every turn. */
+export function forkHistory(history: PlayHistory | undefined, currentKey?: string): PlayHistory | undefined {
+  if (!history) return undefined;
+  return { ...history, runs: history.runs.map(run => ({ ...run, battles: run.battles.map(battle =>
+    run.key === currentKey && battle === run.battles.at(-1) ? structuredClone(battle) : battle) })) };
+}
 export function ensureHistoryRun(save: Save, partial = true): HistoryRun | undefined {
   const run = save.run;
   if (!run) return undefined;
@@ -59,11 +65,11 @@ export function beginHistory(save: Save): void {
   const history = save.history ??= emptyHistory();
   for (const item of history.runs) {
     if (item.status === 'battle' || item.status === 'reward') item.status = 'retired';
-    for (const battle of item.battles) if (battle.status === 'battle') battle.status = 'retired';
+    item.battles = item.battles.map(battle => battle.status === 'battle' ? { ...battle, status: 'retired' } : battle);
   }
   const item = ensureHistoryRun(save, false);
   if (item && save.run) battleFor(item, save.run);
-  boundHistory(history);
+  boundHistory(history, Infinity);
 }
 /** Only dispatch calls this, after resolveAction succeeds. Preview/animation never append. */
 export function recordHistory(save: Save, before: Run, action: Action): void {
@@ -107,7 +113,7 @@ export function recordHistory(save: Save, before: Run, action: Action): void {
       for (const key of Object.keys(value) as (keyof EffectMetric)[]) metric[key] += value[key];
     }
   }
-  boundHistory(save.history!);
+  boundHistory(save.history!, Infinity);
 }
 export function historyCounts(history: PlayHistory): { battles: number; casts: number } {
   return history.runs.reduce((count, run) => ({ battles: count.battles + run.battles.length, casts: count.casts + run.battles.reduce((n, b) => n + b.casts.length, 0) }), { battles: 0, casts: 0 });
@@ -119,9 +125,10 @@ function dropOldestBattle(history: PlayHistory): boolean {
 }
 export function trimHistoryDetails(history: PlayHistory, count = 1): number {
   let removed = 0;
-  for (const run of history.runs) for (const battle of run.battles) {
+  for (const run of history.runs) for (let i = 0; i < run.battles.length; i++) {
+    const battle = run.battles[i];
     const n = Math.min(count - removed, battle.casts.length);
-    battle.casts.splice(0, n); removed += n;
+    if (n) run.battles[i] = { ...battle, casts: battle.casts.slice(n) }; removed += n;
     if (removed >= count) return removed;
   }
   return removed;
@@ -130,9 +137,9 @@ export function boundHistory(history: PlayHistory, maxBytes = HISTORY_LIMITS.byt
   if (history.runs.length > HISTORY_LIMITS.runs) { history.omittedRuns += history.runs.length - HISTORY_LIMITS.runs; history.runs.splice(0, history.runs.length - HISTORY_LIMITS.runs); }
   while (historyCounts(history).battles > HISTORY_LIMITS.battles) dropOldestBattle(history);
   trimHistoryDetails(history, Math.max(0, historyCounts(history).casts - HISTORY_LIMITS.casts));
-  while (historyBytes(history) > maxBytes) {
+  while (Number.isFinite(maxBytes) && historyBytes(history) > maxBytes) {
     // Batch pruning keeps serialization work bounded even with many rich casts.
-    if (trimHistoryDetails(history, 20)) continue;
+    if (trimHistoryDetails(history, Math.max(20, Math.ceil(historyCounts(history).casts / 10)))) continue;
     if (dropOldestBattle(history)) continue;
     if (history.runs.length) { history.runs.shift(); history.omittedRuns++; }
     else break;

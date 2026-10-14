@@ -1,3 +1,4 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 
 type AttackFixture = { stage: number; turn?: number; fast?: boolean; reducedMotion?: boolean };
@@ -31,7 +32,7 @@ test('all eight enemies use distinct attack silhouettes and exact damage without
   await page.setViewportSize({ width: 1000, height: 900 });
   await page.goto('/');
   await page.getByRole('button', { name: /冒険をはじめる/ }).click();
-  const saved = await page.evaluate(() => localStorage.getItem('chain-incantation.save.v1'));
+  const saved = await savedText(page);
   for (const [stage, style] of [[0, 'fireball'], [1, 'feathers'], [2, 'pillars'], [3, 'ray'], [4, 'absorption'], [9, 'breath'], [5, 'frost'], [6, 'mirror']] as const) {
     await showAttack(page, { stage, turn: 1 });
     const effect = page.locator(`.combat-effects[data-phase="counter"][data-enemy-style="${style}"]`);
@@ -41,7 +42,7 @@ test('all eight enemies use distinct attack silhouettes and exact damage without
     await expect(effect.locator('.combat-number')).toContainText('−');
     if (style === 'pillars' || style === 'breath' || style === 'frost') await page.screenshot({ path: `.runtime/screenshots/enemy-attack-${style}.png` });
     await endAttack(page);
-    expect(await page.evaluate(() => localStorage.getItem('chain-incantation.save.v1'))).toBe(saved);
+    expect(await savedText(page)).toBe(saved);
   }
 });
 
@@ -49,7 +50,7 @@ test('frost charge is harmless, explicit, static with reduced motion, and skippa
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await page.getByRole('button', { name: /冒険をはじめる/ }).click();
-  const saved = await page.evaluate(() => localStorage.getItem('chain-incantation.save.v1'));
+  const saved = await savedText(page);
   await showAttack(page, { stage: 5 });
   const charge = page.locator('.combat-effects[data-phase="charge"]');
   await expect(charge).toBeVisible();
@@ -68,6 +69,6 @@ test('frost charge is harmless, explicit, static with reduced motion, and skippa
   await page.evaluate(() => (window as unknown as { attackFx: { skip(): void } }).attackFx.skip());
   await expect(page.locator('.combat-effects')).toBeHidden();
   await endAttack(page);
-  expect(await page.evaluate(() => localStorage.getItem('chain-incantation.save.v1'))).toBe(saved);
+  expect(await savedText(page)).toBe(saved);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

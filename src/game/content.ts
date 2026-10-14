@@ -75,7 +75,7 @@ export function relicDescription(id: RelicId, run?: Run): string {
   if (run?.expansionVersion && run.inventory.includes(id)) return relicGrowthDescription(run, id);
   const upper = run?.tier?.[id] === 2;
   if (id === 'stroke') return `各手で最初に埋めた${upper ? 5 : 3}マスのダメージを2倍。連鎖が長くなっても有効。`;
-  if (id === 'lens' && upper) return '弱点マスの追加ダメージを20にする。各起点からの確定連鎖を比べ、通常入力・スキルそれぞれで最長になるすべての起点を示す。';
+  if (id === 'lens' && upper) return '弱点マスの追加ダメージを32にする（通常より＋12）。弱点を埋めるたびに有効。';
   if (id === 'wick' && upper) return '自動入力回数＋2。シートを完成させても回数が残っていれば、次のシートへ詠唱を続ける。新しいシートの始動にも1回使う。';
   if (primeIds.includes(id)) {
     const rank = run?.acquisitionRank?.[id] ?? 1, chance = [30, 45, 60][rank - 1];
@@ -128,7 +128,7 @@ export function rewardOf(id: RewardId, run?: Run) {
       duality: '発動時の反撃軽減が25％から50％へ。守護を引いた後に適用し、祝福との合計上限は60％。発動確率はそのまま。',
       quint: '発動時の無料スキル券が1枚から2枚へ、所持上限も2枚へ。券を先に使い、魔力と超過分はそのまま残す。券を持つ手・無料スキルの手は抽選しない。',
       sept: '次の1手へ予約する自動入力回数が＋7から＋14へ。予約は1件までで加算されない。発動確率はそのまま。',
-      lens: '弱点ダメージ＋20を保ち、通常入力・スキルそれぞれで最長の確定連鎖になるすべての起点を示す。',
+      lens: '弱点マスの追加ダメージを20から32へ強化（＋12）。弱点を埋めるたびに有効。',
       wick: '自動入力回数＋2を保ち、シート完成後の残り回数で次のシートへ詠唱を続ける。次の始動に1回使う。連鎖数と各手1回の効果は引き継ぐ。',
     };
     return { ...relic, id, name: `上位・${relic.name}`, kind: 'ボス報酬', description: `${relic.name}を上位へ置き換える。${changes[relicId]}` };

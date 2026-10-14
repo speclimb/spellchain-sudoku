@@ -1,3 +1,4 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Report } from '../../src/game/types';
 
@@ -36,7 +37,7 @@ async function prepareGuide(page: Page, skill = false): Promise<{ cell: number; 
 }
 
 async function saved(page: Page) {
-  return page.evaluate(key => localStorage.getItem(key), key);
+  return savedText(page, key);
 }
 
 test('desktop: inspect every chain step and stop without spending a turn, then cast the same prediction', async ({ page }) => {
@@ -98,7 +99,7 @@ test('desktop: inspect every chain step and stop without spending a turn, then c
   await expect(page.locator('#prediction-damage')).toHaveText(report.damage.toLocaleString('ja-JP'));
   expect(await saved(page)).toBe(before);
   await page.locator('[data-action="cast"]').click();
-  await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run.stats.moves, key)).toBe(1);
+  await expect.poll(() => savedText(page, key).then(raw => JSON.parse(raw!).run.stats.moves)).toBe(1);
   await expect(page.locator('[data-action="cast"]')).not.toHaveText('詠唱中…');
   const actual = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run.lastReport, key);
   expect(actual).toEqual(report);

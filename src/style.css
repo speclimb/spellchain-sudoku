@@ -310,3 +310,11 @@
   .history-cast>summary,.history-rewards p,.history-relic h6,.history-battle-content h4,.history-cast-content h5,.history-battle-effects h5{font-size:12px}
   .history-relic h6 small{font-size:11px}.history-metrics>div{padding:7px 0}.history-toolbar select{font-size:12px}.history-status,.history-battle-title .history-status{font-size:10px}
 }
+
+/* Standard longest guidance adds one compact row on every board. Keep the
+   initial mobile cast visible without reducing cell sizes or control targets. */
+@media(max-width:760px){.board-legend{margin-top:3px}.game-layout{gap:2px}}
+/* Large comma-separated health totals may take a second row; never push into
+   the enemy intent, and keep an actual bar even at narrow widths. */
+.enemy-health{flex-wrap:wrap;gap:3px 8px}.enemy-health>.health-track{min-width:24px}.enemy-health>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+@media(max-width:760px){body:has(.game-layout) .site-header{height:44px}.vitals>div>div:first-child{margin-bottom:3px}.tutorial{margin-bottom:2px}.enemy-behavior{margin-bottom:3px}}

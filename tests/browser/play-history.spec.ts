@@ -1,11 +1,15 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import type { HistoryCast, PlayHistory } from '../../src/game/history';
 import type { Save } from '../../src/game/types';
 
 const key = 'chain-incantation.save.v1';
-const saved = (page: Page): Promise<string | null> => page.evaluate(key => localStorage.getItem(key), key);
-const readSave = async (page: Page): Promise<Save> => JSON.parse((await saved(page))!);
+const saved = (page: Page): Promise<string | null> => savedText(page, key);
+const readSave = async (page: Page): Promise<Save> => page.evaluate(async () => {
+  const path = '/src/game/history-storage.ts'; const { HistoryStorage } = await import(/* @vite-ignore */ path);
+  const store = new HistoryStorage(); const result = await store.load(); store.close(); return result.save;
+});
 const historyDialog = (page: Page) => page.getByRole('dialog', { name: 'プレイ履歴', exact: true });
 async function openHistory(page: Page) { await page.locator('[data-action="history"]').click(); await expect(historyDialog(page)).toBeVisible(); }
 async function resume(page: Page) { await page.reload(); await page.getByRole('button', { name: /冒険の続きへ/ }).click(); }
@@ -248,7 +252,7 @@ test('retained adventures, omitted data and 600 casts stay paged and keyboard ac
     const { startRun, newSave, dispatch } = await import(/* @vite-ignore */ engine);
     const { singles } = await import(/* @vite-ignore */ sudoku);
     let save = newSave();
-    for (let n = 0; n < 4; n++) {
+    for (let n = 0; n < 11; n++) {
       save = startRun(save, 'fuse', 21 + n);
       if (n === 1) save = dispatch(save, { type: 'play', cell: singles(save.run.cells)[0], skill: false, revision: save.run.revision });
     }

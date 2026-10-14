@@ -26,17 +26,18 @@ export function playHistory(history: PlayHistory | undefined, view: HistoryView)
   const pages = Math.max(1, Math.ceil((run?.battles.length ?? 0) / BATTLES_PER_PAGE));
   const page = Math.max(0, Math.min(view.page, pages - 1));
   const battles = [...(run?.battles ?? [])].reverse().slice(page * BATTLES_PER_PAGE, (page + 1) * BATTLES_PER_PAGE);
-  const retainedCasts = run?.battles.flatMap(battle => battle.casts) ?? [];
+  const firstCast = run?.battles.find(battle => battle.casts.length)?.casts[0];
+  const lastCast = [...(run?.battles ?? [])].reverse().find(battle => battle.casts.length)?.casts.at(-1);
   const omittedCasts = run?.battles.reduce((n, battle) => n + Math.max(0, battle.ledger.casts - battle.casts.length), 0) ?? 0;
   return `<button class="modal-close" data-action="close" aria-label="履歴を閉じる">×</button>
     <div class="modal-eyebrow">PLAY HISTORY</div><h2>プレイ履歴</h2>
     <p class="modal-intro">確定した詠唱と、選んだ報酬を振り返る。</p>
     <div class="history-toolbar"><label>冒険を選ぶ<select data-history-run aria-label="冒険を選ぶ" ${runs.length ? '' : 'disabled'}>${runs.length ? runs.map(item => `<option value="${esc(item.key)}" ${item.key === run?.key ? 'selected' : ''}>冒険 ${fmt(item.number)} · ${esc(characterOf(item.character).name)} · ${runStatus(item)}</option>`).join('') : '<option>まだ記録がありません</option>'}</select></label><button class="secondary" data-action="history-export" ${runs.length ? '' : 'disabled'}>JSONを保存</button></div>
-    <p class="history-retention">保存中：${runs.length}冒険・${fmt(counts.battles)}戦・詠唱詳細${fmt(counts.casts)}件。新しい冒険を始めても、直近${HISTORY_LIMITS.runs}冒険・全冒険合計${HISTORY_LIMITS.battles}戦・${HISTORY_LIMITS.casts}詠唱まで保持します。容量上限（約${Math.round(HISTORY_LIMITS.bytes / 1024)}KB）に合わせ、古い詠唱詳細、戦闘、冒険から省略します。</p>
+    <p class="history-retention">保存中：${runs.length}冒険・${fmt(counts.battles)}戦・詠唱詳細${fmt(counts.casts)}件。新しい冒険を始めても、直近${HISTORY_LIMITS.runs}冒険・全冒険合計${HISTORY_LIMITS.battles}戦・${fmt(HISTORY_LIMITS.casts)}詠唱詳細を上限に保持します。大容量保存（IndexedDB）を使用します。安全上限は約${Math.round(HISTORY_LIMITS.bytes / 1024 / 1024)}MB。端末・ブラウザの空き容量によっては早く整理されます。古い記録から省略し、サイトデータ削除でも失われるため、大切な履歴はJSONを保存してください。</p>
     ${(history?.omittedRuns ?? 0) > 0 ? `<p class="history-notice">以前の${fmt(history!.omittedRuns)}冒険は保持範囲外です。</p>` : ''}
     ${history?.storageReduced ? '<p class="history-notice">保存容量に合わせて履歴を縮小しました。残っている記録だけを表示しています。</p>' : ''}
     ${run ? `<div class="history-run-heading"><h3>冒険 ${fmt(run.number)} <span>${esc(characterOf(run.character).name)}</span></h3><span class="history-status">${runStatus(run)}</span></div>
-      <p class="history-range">保持範囲 · 戦闘：${run.battles.length ? `第${fmt(run.battles[0].stage + 1)}〜${fmt(run.battles.at(-1)!.stage + 1)}戦` : 'なし'}／詠唱詳細：${retainedCasts.length ? `通算#${fmt(retainedCasts[0].id)}〜#${fmt(retainedCasts.at(-1)!.id)}` : 'なし'}</p>
+      <p class="history-range">保持範囲 · 戦闘：${run.battles.length ? `第${fmt(run.battles[0].stage + 1)}〜${fmt(run.battles.at(-1)!.stage + 1)}戦` : 'なし'}／詠唱詳細：${firstCast && lastCast ? `通算#${fmt(firstCast.id)}〜#${fmt(lastCast.id)}` : 'なし'}</p>
       <p class="history-scope">${run.partial ? '更新・記録再開後からの部分記録です。' : 'この冒険の開始から記録しています。'} 通算${fmt(run.sinceCast + 1)}詠唱目からが記録対象です。${run.partial ? '記録開始前の戦闘・詠唱の詳細は残っていません。' : ''}</p>
       ${run.omittedBattles || omittedCasts ? `<p class="history-notice">この冒険：古い${fmt(run.omittedBattles)}戦を省略。残っている戦闘内でも${fmt(omittedCasts)}詠唱の詳細を省略しています。戦闘の集計値は、その戦闘の記録期間全体の値です。</p>` : ''}
       <div class="history-list-heading"><h3>戦闘一覧 <small>新しい戦いから</small></h3><span>${fmt(run.battles.length)}戦を保持</span></div>
@@ -83,7 +84,7 @@ export function historyCastDetails(cast: HistoryCast): string {
 
 export function downloadPlayHistory(history: PlayHistory): void {
   const data = { format: 'spellchain-sudoku-play-history', version: 1, exportedAt: new Date().toISOString(), scope: '保持されている全冒険の履歴のみ', notes: ['省略済みの冒険・戦闘・詠唱詳細と導入前の記録は含みません。', '戦闘の集計は記録期間全体、castsは保持している詳細のみです。', '盤面・連鎖経路のリプレイ用データは含みません。', '遺物の発揮ダメージ差・軽減量は相乗効果が重なるため合計できません。'], limits: HISTORY_LIMITS, history };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json;charset=utf-8' }));
   const anchor = document.createElement('a');
   anchor.href = url; anchor.download = `spellchain-history-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.append(anchor); anchor.click(); anchor.remove();

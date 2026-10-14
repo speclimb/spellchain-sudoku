@@ -102,28 +102,28 @@ describe('committed play history', () => {
   });
 });
 describe('bounded and resilient history storage', () => {
-  it('keeps three adventures and marks omitted adventures', () => {
-    let save=fixture();for(let i=0;i<6;i++)save=startRun(play(save),'fuse',i);
-    expect(save.history!.runs).toHaveLength(3);expect(save.history!.omittedRuns).toBe(4);
+  it('keeps ten adventures and marks omitted adventures', () => {
+    let save=fixture();for(let i=0;i<13;i++)save=startRun(play(save),'fuse',i);
+    expect(save.history!.runs).toHaveLength(10);expect(save.history!.omittedRuns).toBe(4);
     expect(parseHistory(save.history)).toEqual(save.history);
   });
   it('caps cast details while retaining full recorded battle totals', () => {
-    const h=manyHistory(),b=h.runs[0].battles[0],damage=b.ledger.damage;
-    boundHistory(h);expect(historyCounts(h).casts).toBe(600);expect(b.casts[0].id).toBe(21);
-    expect(b.ledger.casts).toBe(620);expect(b.ledger.damage).toBe(damage);expect(historyBytes(h)).toBeLessThanOrEqual(HISTORY_LIMITS.bytes);
+    const h=manyHistory(HISTORY_LIMITS.casts+20),b=h.runs[0].battles[0],damage=b.ledger.damage;
+    boundHistory(h);expect(historyCounts(h).casts).toBe(HISTORY_LIMITS.casts);expect(h.runs[0].battles[0].casts[0].id).toBe(21);
+    expect(b.ledger.casts).toBe(HISTORY_LIMITS.casts+20);expect(b.ledger.damage).toBe(damage);expect(historyBytes(h)).toBeLessThanOrEqual(HISTORY_LIMITS.bytes);
     expect(parseHistory(h)).toEqual(h);
   });
   it('caps battles and records the omitted count', () => {
     const h=won().history!,r=h.runs[0],b=r.battles[0];
-    r.battles=Array.from({length:75},(_,i)=>({...structuredClone(b),stage:i,ledger:{...structuredClone(b.ledger),stage:i},casts:b.casts.map(c=>({...c,id:i+1}))}));
-    boundHistory(h);expect(historyCounts(h).battles).toBe(60);expect(r.omittedBattles).toBe(15);expect(r.battles[0].stage).toBe(15);expect(parseHistory(h)).toEqual(h);
+    r.battles=Array.from({length:HISTORY_LIMITS.battles+15},(_,i)=>({...structuredClone(b),stage:i,ledger:{...structuredClone(b.ledger),stage:i},casts:b.casts.map(c=>({...c,id:i+1}))}));
+    boundHistory(h);expect(historyCounts(h).battles).toBe(HISTORY_LIMITS.battles);expect(r.omittedBattles).toBe(15);expect(r.battles[0].stage).toBe(15);expect(parseHistory(h)).toEqual(h);
   });
   it('enforces byte budget for rich casts, retaining summary and newest detail', () => {
     const h=manyHistory(600),c=h.runs[0].battles[0].casts[0];
     const effect={level:10,tier:3,metric:{heldCasts:1,opportunities:1,triggers:1,damage:999999,addedInputs:3,fuelGranted:10,fuelUsed:10,mana:4,prevented:5,tokensGranted:3,tokensUsed:1,score:50}};
     for(const cast of h.runs[0].battles[0].casts)for(const id of ['wick','echo','rekindle','pen','ward','stroke','battery','amplifier','afterglow','lens','glass','gold','trinity','duality','quint','sept'])cast.relics[id as keyof HistoryCast['relics']]=structuredClone(effect);
-    expect(historyBytes(h)).toBeGreaterThan(HISTORY_LIMITS.bytes);boundHistory(h);
-    expect(historyBytes(h)).toBeLessThanOrEqual(HISTORY_LIMITS.bytes);expect(historyCounts(h).casts).toBeGreaterThan(0);expect(h.runs[0].battles[0].casts.at(-1)!.id).toBe(600);
+    const budget=750*1024;expect(historyBytes(h)).toBeGreaterThan(budget);boundHistory(h,budget);
+    expect(historyBytes(h)).toBeLessThanOrEqual(budget);expect(historyCounts(h).casts).toBeGreaterThan(0);expect(h.runs[0].battles[0].casts.at(-1)!.id).toBe(600);
     expect(h.runs[0].battles[0].ledger.casts).toBe(600);expect(c.id).toBe(1);expect(parseHistory(h)).toEqual(h);
   });
   it.each(['negative','duplicate','unknown','badDamage','oversize','futureCast','futureRun','wrongKey','futureReward','wrongSeed','wrongCharacter','futureBattle'])('rejects malformed optional history (%s), preserving core', kind=>{

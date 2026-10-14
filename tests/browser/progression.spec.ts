@@ -1,8 +1,9 @@
+import { savedGame } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Save } from '../../src/game/types';
 
 const key = 'chain-incantation.save.v1';
-const saved = (page: Page): Promise<Save> => page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+const saved = (page: Page): Promise<Save> => savedGame(page);
 async function resume(page: Page) {
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();

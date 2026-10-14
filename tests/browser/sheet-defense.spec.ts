@@ -1,3 +1,4 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Report, Run, Save } from '../../src/game/types';
 
@@ -8,7 +9,7 @@ async function phase(page: Page, expected: string): Promise<void> {
 }
 
 async function saved(page: Page): Promise<Save> {
-  return page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  return savedText(page, key).then(raw => JSON.parse(raw!));
 }
 
 async function resumed(page: Page): Promise<void> {

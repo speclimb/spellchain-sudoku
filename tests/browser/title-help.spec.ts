@@ -1,7 +1,8 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 
 const key = 'chain-incantation.save.v1';
-const saved = (page: Page) => page.evaluate(key => localStorage.getItem(key), key);
+const saved = (page: Page) => savedText(page, key);
 const helpButton = (page: Page) => page.locator('.hero-actions').getByRole('button', { name: '遊び方', exact: true });
 const helpDialog = (page: Page) => page.getByRole('dialog', { name: '遊び方', exact: true });
 

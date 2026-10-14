@@ -1,3 +1,4 @@
+import { savedText } from './save-helpers';
 import { expect, test } from '@playwright/test';
 import type { Run } from '../../src/game/types';
 const key = 'chain-incantation.save.v1';
@@ -19,10 +20,10 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
   await page.screenshot({ path: '.runtime/screenshots/desktop-battle.png', fullPage: true });
   await page.locator('[data-action="cast"]').click();
   await expect(page.locator('[data-action="cast"]')).not.toHaveText('詠唱中…');
-  const before = await page.evaluate(key => localStorage.getItem(key), key);
+  const before = await savedText(page, key);
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
-  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(before);
+  expect(await savedText(page, key)).toBe(before);
   // Reach the old final opponent with the public reducer, then exercise the
   // sixth/seventh wins, reward choices and actual HP-zero action through the UI.
   await page.evaluate(async key => {
@@ -48,12 +49,12 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     await page.locator('[data-cell][aria-disabled="false"]').first().click();
     await page.locator('[data-action="cast"]').click();
     await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
-    const rewardRun: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+    const rewardRun: Run = await savedText(page, key).then(raw => JSON.parse(raw!).run);
     expect(rewardRun.phase).toBe('reward');
     expect(rewardRun.stats.kills).toBe(expectedStage);
     if (expectedStage === 6) await page.screenshot({ path: '.runtime/screenshots/desktop-reward.png', fullPage: true });
     await page.locator(`[data-reward="${rewardRun.rewards[0]}"]`).click();
-    const continued: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+    const continued: Run = await savedText(page, key).then(raw => JSON.parse(raw!).run);
     expect(continued.phase).toBe('battle');
     expect(continued.stage).toBe(expectedStage);
     await expect(page.locator('.endless-track')).toContainText(`第${expectedStage + 1}戦`);
@@ -95,16 +96,16 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
   await expect(page.locator('#prediction-damage')).toHaveText(fatal.report.damage.toLocaleString('ja-JP'));
   await page.locator('[data-action="cast"]').click();
   await expect(page.getByRole('dialog', { name: '冒険の結果' })).toBeVisible();
-  const final: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+  const final: Run = await savedText(page, key).then(raw => JSON.parse(raw!).run);
   expect(final.phase).toBe('lost');
   expect(final.hp).toBe(0);
   expect(final.stats.kills).toBe(7);
   expect(final.stage).toBe(7);
   await expect(page.getByRole('dialog', { name: '冒険の結果' })).toContainText('第8戦');
   await page.screenshot({ path: '.runtime/screenshots/desktop-result.png', fullPage: true });
-  const ended = await page.evaluate(key => localStorage.getItem(key), key);
+  const ended = await savedText(page, key);
   await page.reload();
-  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBe(ended);
+  expect(await savedText(page, key)).toBe(ended);
   expect(errors).toEqual([]);
 });
 
@@ -131,9 +132,9 @@ test('mobile: readable board, touch targets, settings, codex and persistent sele
   await page.getByLabel('演出を短く').check();
   await page.getByRole('button', { name: '閉じる', exact: true }).click();
   await page.locator('[data-action="cast"]').click();
-  await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run.stats.moves, key)).toBe(1);
+  await expect.poll(() => savedText(page, key).then(raw => JSON.parse(raw!).run.stats.moves)).toBe(1);
   await page.reload();
-  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).settings.fast, key)).toBe(true);
+  expect(await savedText(page, key).then(raw => JSON.parse(raw!).settings.fast)).toBe(true);
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
   await expect(page.locator('canvas')).toBeVisible();
   expect(errors).toEqual([]);
@@ -154,7 +155,7 @@ test('reload during the victory animation preserves a single clear and the exact
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
-  const committed = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  const committed = await savedText(page, key).then(raw => JSON.parse(raw!));
   expect(committed.meta.clears).toBe(1);
   expect(committed.run.phase).toBe('reward');
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
@@ -163,12 +164,12 @@ test('reload during the victory animation preserves a single clear and the exact
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
-  const restored = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  const restored = await savedText(page, key).then(raw => JSON.parse(raw!));
   expect(restored).toEqual(committed);
   await page.screenshot({ path: '.runtime/screenshots/mobile-reward.png', fullPage: true });
   await page.locator(`[data-reward="${restored.run.rewards[0]}"]`).click();
   await page.reload();
-  const advanced = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  const advanced = await savedText(page, key).then(raw => JSON.parse(raw!));
   expect(advanced.meta.clears).toBe(1);
   expect(advanced.run.stage).toBe(1);
   expect(advanced.run.inventory).toHaveLength(1);

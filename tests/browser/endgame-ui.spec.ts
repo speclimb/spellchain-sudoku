@@ -1,8 +1,9 @@
+import { savedGame } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Save } from '../../src/game/types';
 
 const key = 'chain-incantation.save.v1';
-const saved = (page: Page): Promise<Save> => page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+const saved = (page: Page): Promise<Save> => savedGame(page);
 async function resume(page: Page) {
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
@@ -16,7 +17,7 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
     await page.setViewportSize(viewport); await page.goto('/');
     const fixture = await page.evaluate(async key => {
       const path = '/src/game/engine.ts';
-      const { newSave, startRun, previewAction, legalOrigins } = await import(/* @vite-ignore */ path);
+      const { newSave, startRun, previewAction, legalOrigins, longestOrigins } = await import(/* @vite-ignore */ path);
       for (let seed = 1; seed < 100; seed++) {
         const save = startRun(newSave(), 'fuse', seed); save.meta.tutorialDone = true;
         const run = save.run; run.spellLevel = 32;
@@ -25,7 +26,7 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
           const report = previewAction(run, cell);
           const alternative = legal.find((other: number) => other !== cell && report.path.some((e: { cell: number }) => e.cell === other));
           if (report.path.length !== 36 || alternative === undefined) continue;
-          localStorage.setItem(key, JSON.stringify(save)); return { cell, alternative, legal, blanks: run.cells.filter((n: number) => !n).length };
+          localStorage.setItem(key, JSON.stringify(save)); return { cell, alternative, legal, longest: longestOrigins(run), blanks: run.cells.filter((n: number) => !n).length };
         }
       }
       throw new Error('No dense natural 36-link fixture');
@@ -39,10 +40,10 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
     const alternative = page.locator(`[data-cell="${fixture.alternative}"]`);
     await expect(alternative).toHaveAttribute('data-root', 'legal');
     await expect(alternative).toHaveAttribute('data-path', 'true');
-    await expect(alternative.locator('.origin-mark')).toHaveText('○');
+    await expect(alternative.locator('.origin-mark')).toHaveText(fixture.longest.cells.includes(fixture.alternative) ? '★' : '○');
     await expect(alternative).toHaveAttribute('aria-disabled', 'false');
-    await expect(page.locator('[data-longest="true"]')).toHaveCount(0);
-    await expect(page.locator('.longest-origins')).toHaveCount(0);
+    await expect(page.locator('[data-longest="true"]')).toHaveCount(fixture.longest.cells.length);
+    await expect(page.locator('.longest-origins')).toHaveAttribute('data-length', String(fixture.longest.length));
     expect(await saved(page)).toEqual(before);
     await page.screenshot({ path: `.runtime/screenshots/endgame-roots-${viewport.width}.png`, fullPage: true });
     await alternative.click();
@@ -64,14 +65,14 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
   });
 }
 
-test('upper lens marks all tied longest roots in normal and free-skill modes without drawing randomness', async ({ page }) => {
+test('starting display marks all tied longest roots without a lens in normal and free-skill modes without drawing randomness', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/');
   const fixture = await page.evaluate(async key => {
     const path = '/src/game/engine.ts';
     const { newSave, startRun, longestOrigins, legalOrigins } = await import(/* @vite-ignore */ path);
     for (let seed = 1; seed < 70; seed++) {
       const save = startRun(newSave(), 'fuse', seed); save.meta.tutorialDone = true;
-      const run = save.run; run.inventory = ['lens', 'quint']; run.tier.lens = 2; run.freeSkillTokens = 1; run.spellLevel = 9;
+      const run = save.run; run.inventory = ['quint']; run.freeSkillTokens = 1; run.spellLevel = 9;
       const normal = longestOrigins(run, false), skill = longestOrigins(run, true);
       if (normal.cells.length < 2 || skill.cells.length < 2) continue;
       localStorage.setItem(key, JSON.stringify(save)); return { normal, skill, legal: legalOrigins(run, false) };
@@ -156,9 +157,7 @@ test('reduced-motion multi-sheet animation still labels one-cast clear and reloa
   const fixture = await multisheet(page, true); await resume(page);
   await page.locator(`[data-cell="${fixture.cell}"]`).click();
   await page.locator('[data-action="cast"]').click();
-  await expect.poll(() => page.evaluate(() => document.querySelector('.combat-effects')?.getAttribute('data-phase')), { intervals: [10] }).toBe('one-cast');
-  await expect(page.locator('.combat-effects')).toHaveClass(/fx-still/);
-  await expect(page.locator('.combat-number')).toContainText('シート 1');
+  await expect.poll(() => page.evaluate(() => ({ phase: document.querySelector('.combat-effects')?.getAttribute('data-phase'), still: document.querySelector('.combat-effects')?.classList.contains('fx-still'), number: document.querySelector('.combat-number')?.textContent })), { intervals: [10] }).toEqual({ phase: 'one-cast', still: true, number: expect.stringContaining('シート 1') });
   await page.screenshot({ path: '.runtime/screenshots/endgame-multisheet-reduced-motion.png', fullPage: true });
   expect(await saved(page)).toEqual(fixture.expected);
   await page.reload(); expect(await saved(page)).toEqual(fixture.expected);

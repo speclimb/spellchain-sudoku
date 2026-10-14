@@ -1,3 +1,4 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 
 const key = 'chain-incantation.save.v1';
@@ -182,7 +183,7 @@ test('mobile full-sheet completion plays its seal, shield, sheet-clear and growt
   await finished(page);
   const played = (await audit(page)).started.map(item => item.asset);
   for (const name of ['cast', 'spell-cross', 'hit-light', 'shield', 'sheet-clear', 'growth']) expect(played).toContain(name);
-  const run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+  const run = await savedText(page, key).then(raw => JSON.parse(raw!).run);
   expect(run.sheet).toBe(2);
   expect(run.phase).toBe('battle');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -203,7 +204,7 @@ test('muting during a cast stops active samples and later phases stay silent whi
   expect(muted.stopped.length).toBeGreaterThan(before.stopped.length);
   await finished(page);
   expect((await audit(page)).started).toHaveLength(muted.started.length);
-  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run.stats.moves, key)).toBe(1);
+  expect(await savedText(page, key).then(raw => JSON.parse(raw!).run.stats.moves)).toBe(1);
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).settings.sound, key)).toBe(false);
 });
 
@@ -218,11 +219,11 @@ test('failed sound downloads do not stop casting, damage, progression or saving'
   await page.locator(`[data-cell="${cell}"]`).click();
   await page.locator('[data-action="cast"]').click();
   await finished(page);
-  const committed = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  const committed = await savedText(page, key).then(raw => JSON.parse(raw!));
   expect(committed.run.stats.moves).toBe(1);
   expect(committed.run.sheet).toBe(2);
   await page.reload();
-  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key)).toEqual(committed);
+  expect(await savedText(page, key).then(raw => JSON.parse(raw!))).toEqual(committed);
   expect(errors).toEqual([]);
 });
 

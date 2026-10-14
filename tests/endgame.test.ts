@@ -228,7 +228,7 @@ describe('unbounded upper Wick casts and segmented accounting', () => {
     let raw = 0;
     for (const part of report.segments!) {
       const segmentPath = report.path.slice(part.pathStart, part.pathEnd);
-      raw = segmentPath.reduce((sum, event) => sum + (Math.min(80, 10 + (event.ordinal - 1) * 2) + event.units.length * 40 + (event.mark === 'weak' ? 20 : 0)) * (event.ordinal <= 5 ? 2 : 1), 0);
+      raw = segmentPath.reduce((sum, event) => sum + (Math.min(80, 10 + (event.ordinal - 1) * 2) + event.units.length * 40 + (event.mark === 'weak' ? 32 : 0)) * (event.ordinal <= 5 ? 2 : 1), 0);
       expect(part.baseDamage).toBe(Math.floor(raw * spellMultiplier(run.spellLevel)));
       expect(part.clearBonus).toBe(part.fullClear ? Math.floor(part.baseDamage * segmentPath.length / (4 * part.givens.filter(v => !v).length)) : 0);
     }

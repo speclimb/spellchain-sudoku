@@ -19,7 +19,7 @@ export function boardView(run: Run, prediction: Report | null, inspect: number |
 
 export function originView(run: Run, skill: boolean, busy: boolean, skillId?: SkillId) {
   const legal = new Set(busy ? [] : legalOrigins(run, skill, skillId));
-  const maximum = !busy && run.inventory.includes('lens') && (run.tier.lens ?? 1) >= 2 ? longestOrigins(run, skill, skillId) : null;
+  const maximum = !busy ? longestOrigins(run, skill, skillId) : null;
   return { legal, maximum, longest: new Set(maximum?.cells ?? []) };
 }
 

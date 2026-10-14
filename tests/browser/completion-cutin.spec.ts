@@ -1,3 +1,4 @@
+import { savedText, resetHistoryDatabase } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Report, Run } from '../../src/game/types';
 
@@ -7,6 +8,7 @@ type Completion = 'row' | 'column' | 'box' | 'cross';
 /** Complete selected units in a real generated puzzle while keeping its givens. */
 async function prepareCompletion(page: Page, completion: Completion, settings: { fast?: boolean; reducedMotion?: boolean } = {}): Promise<{ cell: number; report: Report }> {
   await page.goto('/');
+  await resetHistoryDatabase(page);
   const fixture = await page.evaluate(async ({ key, completion, settings }) => {
     const enginePath = '/src/game/engine.ts';
     const sudokuPath = '/src/game/sudoku.ts';
@@ -78,7 +80,7 @@ for (const scenario of [
     await page.waitForTimeout(60);
     await page.screenshot({ path: `.runtime/screenshots/${scenario.screenshot}`, fullPage: false });
     await finished(page);
-    const run: Run = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+    const run: Run = await savedText(page, key).then(raw => JSON.parse(raw!).run);
     expect(run.lastReport).toEqual(report);
     expect(run.stats.moves).toBe(1);
     expect(errors).toEqual([]);
@@ -97,7 +99,7 @@ test('completion cut-ins clean up in fast and reduced-motion modes without chang
     }
     await finished(page);
     expect(Date.now() - started).toBeLessThan(1800);
-    const after = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+    const after = await savedText(page, key).then(raw => JSON.parse(raw!).run);
     expect(after.lastReport).toEqual(report);
     expect(after.stats.moves).toBe(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -166,7 +168,7 @@ test('level growth adds eight automatic fills and a real thirteen-link cast stay
   expect(audit.activations).toBeLessThanOrEqual(3);
   expect(audit.intervals.every(duration => duration < 450)).toBe(true);
   expect(audit.intervals.reduce((sum, duration) => sum + duration, 0)).toBeLessThan(1300);
-  const after = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+  const after = await savedText(page, key).then(raw => JSON.parse(raw!).run);
   expect(after.lastReport).toEqual(fixture.report);
   expect(after.stats.bestChain).toBe(13);
   console.info(`Thirteen-link cast: ${elapsed} ms; completion cut-ins: ${audit.activations}; visible intervals: ${audit.intervals.map(n => Math.round(n)).join(', ')} ms`);
@@ -196,23 +198,23 @@ test('exhausted relic pool offers repeatable growth and advances to another play
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toBeVisible();
-  const rewardRun = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+  const rewardRun = await savedText(page, key).then(raw => JSON.parse(raw!).run);
   expect([...rewardRun.rewards].sort()).toEqual(['recovery', 'training', 'vitality']);
   await expect(page.locator('[data-reward]')).toHaveCount(3);
   await page.screenshot({ path: '.runtime/screenshots/mobile-repeatable-rewards.png', fullPage: true });
   await page.locator('[data-reward="training"]').click();
-  const next = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key);
+  const next = await savedText(page, key).then(raw => JSON.parse(raw!));
   expect(next.run.stage).toBe(1);
   expect(next.run.phase).toBe('battle');
   expect(next.run.spellLevel).toBe(rewardRun.spellLevel + 1);
   expect(next.run.inventory).toEqual(original);
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
-  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!), key)).toEqual(next);
+  expect(await savedText(page, key).then(raw => JSON.parse(raw!))).toEqual(next);
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
   await finished(page);
-  const played = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+  const played = await savedText(page, key).then(raw => JSON.parse(raw!).run);
   expect(played.revision).toBe(next.run.revision + 1);
   expect(played.stats.moves).toBe(next.run.stats.moves + 1);
   expect(played.inventory).toEqual(original);

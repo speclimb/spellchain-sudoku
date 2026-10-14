@@ -55,14 +55,14 @@ export interface RelicValues {
   level: number; tier: number; auto: number; echoes: number; echoDamage: number; rekindleAuto: number;
   completion: number; ward: number; strokeCells: number; strokeMultiplier: number; charge: number; overflow: number;
   skillMultiplier: number; afterglowAuto: number; weakDamage: number; damageMultiplier: number; scoreMultiplier: number;
-  chance: number; primeValue: number; carry: boolean; showLongest: boolean;
+  chance: number; primeValue: number; carry: boolean;
 }
 /** One replacement value per effect: tier and level never reapply an old multiplier. */
 export function relicValues(run: Run, id: RelicId): RelicValues {
   const lv = relicLevel(run, id), tier = relicTierLevel(run, id), n = run.expansionVersion ? Math.max(0, lv - 1) : 0, t = tier - 1;
   const result: RelicValues = { level: lv, tier, auto: 0, echoes: 0, echoDamage: 0, rekindleAuto: 0, completion: 0, ward: 0,
     strokeCells: 0, strokeMultiplier: 1, charge: 0, overflow: 0, skillMultiplier: 1, afterglowAuto: 0, weakDamage: 8,
-    damageMultiplier: 1, scoreMultiplier: 1, chance: 0, primeValue: 0, carry: false, showLongest: false };
+    damageMultiplier: 1, scoreMultiplier: 1, chance: 0, primeValue: 0, carry: false };
   if (!lv) return result;
   // Finite, diminishing growth for rates. The first three prime acquisitions
   // retain exactly 30/45/60%; rank and tier are persisted independently of level.
@@ -77,7 +77,7 @@ export function relicValues(run: Run, id: RelicId): RelicValues {
   if (id === 'battery') { result.charge = 2 + n + t; result.overflow = Math.min(6, 2 + Math.floor(n / 3) + t); }
   if (id === 'amplifier') result.skillMultiplier = 1.5 + diminishing + t * .2;
   if (id === 'afterglow') result.afterglowAuto = 2 + n + t * 2;
-  if (id === 'lens') { result.weakDamage = 20 + n * 4 + (tier === 3 ? 12 : 0); result.showLongest = tier >= 2; }
+  if (id === 'lens') result.weakDamage = 20 + n * 4 + t * 12;
   if (id === 'glass') result.damageMultiplier = 1.25 + diminishing * .5 + t * .1;
   if (id === 'gold') result.scoreMultiplier = 1.5 + diminishing + t * .25;
   if (['duality', 'trinity', 'quint', 'sept'].includes(id)) {
@@ -122,7 +122,7 @@ export function relicGrowthDescription(run: Run, id: RelicId): string {
   if (id === 'battery') return `通常詠唱の魔力＋${v.charge}。超過分を${v.overflow}まで蓄え、有料スキル直後に戻す。無料券を先に使い魔力を温存。`;
   if (id === 'amplifier') return `スキル詠唱の通常攻撃ダメージを${numberText(v.skillMultiplier)}倍。`;
   if (id === 'afterglow') return `スキル使用後、次の通常詠唱だけ自動入力＋${v.afterglowAuto}。戦闘を越えて保持。`;
-  if (id === 'lens') return `弱点マスの追加ダメージ${v.weakDamage}。${v.showLongest ? '現在のスキルを含め、最長連鎖になるすべての起点に★。' : '上位で最長起点の★を解放。'}`;
+  if (id === 'lens') return `弱点マスの追加ダメージ${v.weakDamage}。${v.tier === 1 ? '上位でさらに＋12、極位で通常より＋24。' : v.tier === 2 ? '通常より＋12。極位でさらに＋12。' : '通常より＋24。'}弱点を埋めるたびに有効。`;
   if (id === 'glass') return `通常攻撃ダメージ${numberText(v.damageMultiplier)}倍。初取得時のみ最大HP−8（強化では再減少しない）。`;
   if (id === 'gold') return `攻撃由来の得点${numberText(v.scoreMultiplier)}倍。攻撃ダメージと撃破固定500点は変えない。`;
   const digit = { duality: 2, trinity: 3, quint: 5, sept: 7 }[id as 'duality' | 'trinity' | 'quint' | 'sept'];

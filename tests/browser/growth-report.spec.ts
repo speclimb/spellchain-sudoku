@@ -1,7 +1,8 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Run } from '../../src/game/types';
 const key = 'chain-incantation.save.v1';
-const readRun = (page: Page): Promise<Run> => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+const readRun = (page: Page): Promise<Run> => savedText(page, key).then(raw => JSON.parse(raw!).run);
 async function resume(page: Page) {
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();

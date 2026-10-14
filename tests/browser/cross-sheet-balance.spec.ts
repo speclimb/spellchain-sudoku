@@ -1,8 +1,9 @@
+import { savedText } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Run } from '../../src/game/types';
 
 const key = 'chain-incantation.save.v1';
-const readRun = (page: Page): Promise<Run> => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).run, key);
+const readRun = (page: Page): Promise<Run> => savedText(page, key).then(raw => JSON.parse(raw!).run);
 async function resume(page: Page) {
   await page.reload();
   await page.getByRole('button', { name: /冒険の続きへ/ }).click();
@@ -66,7 +67,7 @@ test('old boss HP and already sampled choices stay intact until the final reward
     return enemyOf(19).hp;
   }, key);
   await resume(page);
-  await expect(page.locator('.enemy-health')).toContainText(`1 / ${hp}`);
+  await expect(page.locator('.enemy-health')).toContainText(`1 / ${hp.toLocaleString('ja-JP')}`);
   // Reading/resuming does not rewrite a save; absent remains legacy until action.
   expect((await readRun(page)).enemyHealthVersion).toBeUndefined();
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
@@ -87,7 +88,7 @@ test('old boss HP and already sampled choices stay intact until the final reward
   });
   expect(next.enemyHealthVersion).toBe(1); expect(next.stage).toBe(20);
   expect(next.enemyHp).toBe(expected);
-  await expect(page.locator('.enemy-health')).toContainText(`${expected} / ${expected}`);
+  await expect(page.locator('.enemy-health')).toContainText(`${expected.toLocaleString('ja-JP')} / ${expected.toLocaleString('ja-JP')}`);
   await resume(page); expect(await readRun(page)).toEqual(next);
 });
 
@@ -107,7 +108,7 @@ test('new boss HP display follows fixed wave even with a powerful carry build', 
     return save.run.enemyHp;
   }, key);
   await resume(page);
-  await expect(page.locator('.enemy-health')).toContainText(`${hp} / ${hp}`);
+  await expect(page.locator('.enemy-health')).toContainText(`${hp.toLocaleString('ja-JP')} / ${hp.toLocaleString('ja-JP')}`);
   const before = await readRun(page);
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   expect(await readRun(page)).toEqual(before);
