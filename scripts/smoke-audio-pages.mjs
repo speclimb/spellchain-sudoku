@@ -60,6 +60,12 @@ try {
   await page.getByRole('button', { name: /冒険をはじめる/ }).click();
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
   await page.locator('[data-action="cast"]').click();
+  // Persistence is asynchronous: wait for the committed core mirror before
+  // checking animation completion or reading the saved gameplay action.
+  await page.waitForFunction(() => {
+    const raw = localStorage.getItem('chain-incantation.save.v1');
+    return raw && JSON.parse(raw).run?.stats.moves === 1;
+  });
   await page.waitForFunction(() => !document.querySelector('.combat-effects'));
   const evidence = await page.evaluate(() => ({ audio: window.audioPages, saved: JSON.parse(localStorage.getItem('chain-incantation.save.v1')) }));
   const audioResponses = responses.filter(item => item.url.endsWith('.mp3'));
