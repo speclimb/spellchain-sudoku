@@ -248,8 +248,10 @@ test('level forty fills all thirty-six original blanks in one legal cast, counte
   await expect(page.locator('.prediction-detail')).toContainText('守護 0→99');
   const started = Date.now();
   await page.locator('[data-action="cast"]').click();
-  await expect.poll(() => page.evaluate(() => document.querySelector('.combat-chain strong')?.textContent), { intervals: [20] }).toBe('36');
+  // Check the chain while it is running. The final fill immediately starts the
+  // per-sheet celebration, so checking this phase after 36 is a timing race.
   await phase(page, 'chain');
+  await expect.poll(() => page.evaluate(() => document.querySelector('.combat-chain strong')?.textContent), { intervals: [20] }).toBe('36');
   await page.screenshot({ path: '.runtime/screenshots/desktop-thirtysix-chain.png', fullPage: false });
   await phase(page, 'counter');
   await expect(page.locator('.combat-number')).toHaveText('−27');
