@@ -100,4 +100,4 @@ export type Action =
   | { type: 'equip'; skills: SkillId[]; revision: number };
 export interface Meta { clears: number; runs: number; wins: number; bestScore: number; bestKills: number; tutorialDone: boolean }
 export interface Settings { sound: boolean; fast: boolean; reducedMotion: boolean }
-export interface Save { version: 1; meta: Meta; run: Run | null; settings: Settings }
+export interface Save { history?: import('./history').PlayHistory; version: 1; meta: Meta; run: Run | null; settings: Settings }

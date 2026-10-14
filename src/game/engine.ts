@@ -4,6 +4,7 @@ import { canTakeReward, rollRewards, rollSkillRewards, rollRelicRewards, applyGr
 import { skillLevel, selectedSkill, skillValues, relicValues } from './growth';
 import { enemyForRun, enemyIncoming, applyEnemyArmor } from './enemies';
 import { effectMetrics, recordContribution } from './contributions';
+import { beginHistory, ensureHistoryRun, recordHistory } from './history';
 export { canTakeReward } from './rewards';
 import { Random, PEERS, UNITS, candidates, near, row, col } from './sudoku';
 import type { Action, ChainTrace, FillEvent, Mark, Report, Preview, Run, Save, CharacterId, RelicId, PrimeEffect, PrimeRelicId, PrimeProcOutcome, SheetSegment, SkillId, EffectMetric } from './types';
@@ -70,6 +71,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
   const chosen = CHARACTERS.find(c => c.id === character);
   if (!chosen || chosen.unlock > save.meta.clears) throw new Error('この術師はまだ解放されていません。');
   const next = structuredClone(save), random = new Random(seed);
+  ensureHistoryRun(next);
   const run: Run = {
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0, balanceVersion: 2, castCounter: 0,
     expansionVersion: 1, enemyRulesVersion: 1, enemyHealthVersion: 1, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
@@ -81,7 +83,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
     stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0, sheets: 0 }, lastReport: null,
   };
   prepareBoard(run, random); run.enemyHp = enemyForRun(run).hp; run.randomState = random.state;
-  next.run = run; next.meta.runs++;
+  next.run = run; next.meta.runs++; beginHistory(next);
   return next;
 }
 export const incomingAttack = (run: Run): number => enemyIncoming(run);
@@ -444,9 +446,11 @@ export function resolveAction(source: Run, action: Action): Run {
 export function dispatch(save: Save, action: Action): Save {
   if (!save.run) throw new Error('冒険が開始されていません。');
   const next = structuredClone(save), run = resolveAction(save.run, action);
+  ensureHistoryRun(next);
   next.meta.clears += run.stats.kills - save.run.stats.kills;
   next.meta.bestKills = Math.max(next.meta.bestKills, run.stats.kills);
   if (run.phase === 'won' || run.phase === 'lost') next.meta.bestScore = Math.max(next.meta.bestScore, run.score);
   next.run = run;
+  recordHistory(next, save.run, action);
   return next;
 }

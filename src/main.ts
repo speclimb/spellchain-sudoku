@@ -4,6 +4,7 @@ import { canUseSkill, chainBonus, dispatch, incomingAttack, legalOrigins, longes
 import { enemyAt, enemyForRun, enemyIntent } from './game/enemies';
 import { ownedSkills, relicGrowthDescription, relicLevel, relicTierLabel, relicValues, skillDescriptionFor, skillLevel, skillOf } from './game/growth';
 import { contributionReport } from './ui/contribution-report';
+import { downloadPlayHistory, historyBattleDetails, historyCastDetails, playHistory, selectedHistoryRun, type HistoryView } from './ui/play-history';
 import { enemyEmblem as emblem } from './ui/enemy-art';
 import { loadSave, persist } from './game/storage';
 import { candidates } from './game/sudoku';
@@ -22,8 +23,10 @@ let chosen: CharacterId = save.run?.character ?? 'fuse';
 let selected: number | null = null, prediction: Preview | null = null, skill = false, busy = false;
 let selectedSkill: SkillId = save.run?.character ?? 'fuse';
 let reportBossOnly = false;
-let modal: 'quick-help' | 'help' | 'settings' | 'codex' | 'restart' | null = null;
+let modal: 'quick-help' | 'help' | 'settings' | 'codex' | 'restart' | 'history' | null = null;
 let modalTriggerAction: string | null = null;
+let historyView: HistoryView = { page: 0 };
+let historyReturn: { scroll: number; reportOpen: boolean; equipmentOpen: boolean; breakdownOpen: boolean } | null = null;
 let tutorialHidden = save.meta.tutorialDone;
 let feedback = '';
 let guideOpen = false, guideIndex = 0;
@@ -41,7 +44,7 @@ const activeRun = () => save.run && (save.run.phase === 'battle' || save.run.pha
 const persistNow = () => { warning = persist(save); };
 
 function header(): string {
-  return `<header class="site-header"><button class="brand" data-action="home" aria-label="タイトルへ"><span class="brand-seal">✧</span><span>連鎖詠唱<span class="brand-sub">ナンプレ / NUMERAL GRIMOIRE</span></span></button><nav aria-label="メニュー"><button class="nav-button" data-action="codex">遺物図鑑</button><button class="icon-button" data-action="help" aria-label="遊び方">?</button><button class="icon-button sound-button" data-action="sound" aria-label="${save.settings.sound ? '消音する' : '音をオンにする'}">${save.settings.sound ? '♪' : '♫̸'}</button><button class="icon-button" data-action="settings" aria-label="設定">⚙</button></nav></header>`;
+  return `<header class="site-header"><button class="brand" data-action="home" aria-label="タイトルへ"><span class="brand-seal">✧</span><span>連鎖詠唱<span class="brand-sub">ナンプレ / NUMERAL GRIMOIRE</span></span></button><nav aria-label="メニュー"><button class="nav-button history-launch" data-action="history" aria-label="プレイ履歴" aria-haspopup="dialog">履歴</button><button class="nav-button" data-action="codex">遺物図鑑</button><button class="icon-button" data-action="help" aria-label="遊び方">?</button><button class="icon-button sound-button" data-action="sound" aria-label="${save.settings.sound ? '消音する' : '音をオンにする'}">${save.settings.sound ? '♪' : '♫̸'}</button><button class="icon-button" data-action="settings" aria-label="設定">⚙</button></nav></header>`;
 }
 function home(): string {
   const previewDigits = demoRun.cells.map((n, i) => n || demoPath.find(e => e.cell === i)?.value || 0).join('');
@@ -124,7 +127,8 @@ function reward(run: Run): string {
   const unlocked = [...CHARACTERS.filter(c => c.unlock > 0 && c.unlock === save.meta.clears).map(c => c.name), ...RELICS.filter(r => r.unlock > 0 && r.unlock === save.meta.clears).map(r => r.name)];
   const heading = run.rewardStep === 'skill' ? '使いこなす術式を、選ぶ。' : staged && run.rewardStep === 'relic' ? '次は、遺物を育てる。' : enemy.isBoss ? '詠唱は、さらに先へ。' : '新たな力を、ひとつ。';
   return `<div class="modal-eyebrow">${enemy.isBoss ? 'BOSS' : 'ENCOUNTER'} ${String(run.stage + 1).padStart(2, '0')} COMPLETE</div>${staged ? `<div class="reward-progress" aria-label="ボス報酬 ${run.rewardStep === 'skill' ? '1/2 スキル' : '2/2 遺物'}"><span class="${run.rewardStep === 'skill' ? 'current' : 'complete'}">${run.rewardStep === 'skill' ? '1/2' : '✓'} スキル</span><i>→</i><span class="${run.rewardStep === 'relic' ? 'current' : ''}">2/2 遺物</span></div>` : ''}<h2>${heading}</h2><p class="modal-intro">${run.rewardStep === 'skill' ? 'スキルを1つ取得・強化。そのあと遺物を1つ選べます。' : staged && run.rewardStep === 'relic' ? 'スキルの選択は保存済み。遺物を選ぶと、次の戦いへ進みます。' : enemy.isBoss ? 'ボスを撃破！ 鍛えた詠唱と新たな力で、さらに先へ。' : '敵を撃破しました。新しい力を選んで、さらに先へ。'}</p><div class="reward-summary"><span>✧ 撃破 ＋500</span>${run.lastReport ? `<span>♡ 生命力 ＋${run.lastReport.healed}</span>` : ''}<span>術式 Lv.${run.spellLevel}</span></div>${run.lastReport?.oneCastClear ? `<div class="one-cast-summary">✦ 一詠全成！ ${run.lastReport.segments?.filter(part => part.oneCastClear).length ?? 1}枚を一度の詠唱で完成<div>完成加算 合計 ＋${fmt(run.lastReport.clearBonus ?? 0)} ダメージ</div></div>` : ''}
-  ${enemy.isBoss ? contributionReport(run, reportBossOnly) : ''}${equipmentEditor(run)}
+  <div class="history-entry"><button class="text-button" data-action="history-reward" aria-haspopup="dialog">プレイ履歴を見る →</button></div>
+  ${enemy.isBoss ? contributionReport(run, reportBossOnly).replace('</section>', '<button class="text-button report-history-link" data-action="history-report" aria-haspopup="dialog">詠唱ごとのプレイ履歴を見る →</button></section>') : ''}${equipmentEditor(run)}
   <div class="reward-grid">${run.rewards.map(id => {
     const relic = rewardOf(id, run), baseId = id.replace(/^(greater:|apex:)/, '');
     const isSkill = id.startsWith('skill:'), skillId = isSkill ? id.slice(6) as SkillId : null;
@@ -137,7 +141,7 @@ function reward(run: Run): string {
 }
 function result(run: Run): string {
   const won = run.phase === 'won';
-  return `<div class="result-seal">${won ? '✧' : '☾'}</div><div class="modal-eyebrow">${won ? 'THE GRIMOIRE IS COMPLETE' : 'A SPELL TO REMEMBER'}</div><h2>${won ? 'あなたの詠唱が、夜を明かした。' : 'この詠唱は、次の一手へ。'}</h2><p class="modal-intro">${won ? '以前の六連戦を踏破した記録です。次の冒険は、果てしない連戦へ。' : `第${run.stage + 1}戦で挑戦終了。${run.stats.kills}体を撃破し、術式 Lv.${run.spellLevel}まで成長しました。`}</p><div class="result-score"><span>FINAL SCORE</span><strong>${fmt(run.score)}</strong><small>${run.score >= save.meta.bestScore ? '✦ 自己ベスト' : `BEST ${fmt(save.meta.bestScore)}`}</small></div><div class="result-stats"><div><strong>${run.stats.bestChain}</strong><span>最大連鎖</span></div><div><strong>${run.stats.moves}</strong><span>詠唱した手数</span></div><div><strong>${run.stats.filled}</strong><span>連鎖で埋めた数字</span></div></div><p class="result-growth">完成シート ${run.stats.sheets}枚 · 自動入力＋${chainBonus(run.spellLevel)} · 攻撃 ×${spellMultiplier(run.spellLevel).toFixed(1)}</p>${run.lastReport ? `<details class="reward-breakdown"><summary>最後の詠唱${run.lastReport.oneCastClear ? ' · 一詠全成' : ''}</summary>${breakdown(run.lastReport)}</details>` : ''}<div class="result-relics">${run.inventory.map(id => `<span title="${relicOf(id).name}">${relicOf(id).symbol}</span>`).join('')}</div><button class="primary" data-action="result-home">次の冒険へ <span>↗</span></button><p class="quiet modal-footnote">戦績と解放した要素を保存しました。</p>`;
+  return `<div class="result-seal">${won ? '✧' : '☾'}</div><div class="modal-eyebrow">${won ? 'THE GRIMOIRE IS COMPLETE' : 'A SPELL TO REMEMBER'}</div><h2>${won ? 'あなたの詠唱が、夜を明かした。' : 'この詠唱は、次の一手へ。'}</h2><p class="modal-intro">${won ? '以前の六連戦を踏破した記録です。次の冒険は、果てしない連戦へ。' : `第${run.stage + 1}戦で挑戦終了。${run.stats.kills}体を撃破し、術式 Lv.${run.spellLevel}まで成長しました。`}</p><div class="result-score"><span>FINAL SCORE</span><strong>${fmt(run.score)}</strong><small>${run.score >= save.meta.bestScore ? '✦ 自己ベスト' : `BEST ${fmt(save.meta.bestScore)}`}</small></div><div class="result-stats"><div><strong>${run.stats.bestChain}</strong><span>最大連鎖</span></div><div><strong>${run.stats.moves}</strong><span>詠唱した手数</span></div><div><strong>${run.stats.filled}</strong><span>連鎖で埋めた数字</span></div></div><p class="result-growth">完成シート ${run.stats.sheets}枚 · 自動入力＋${chainBonus(run.spellLevel)} · 攻撃 ×${spellMultiplier(run.spellLevel).toFixed(1)}</p>${run.lastReport ? `<details class="reward-breakdown"><summary>最後の詠唱${run.lastReport.oneCastClear ? ' · 一詠全成' : ''}</summary>${breakdown(run.lastReport)}</details>` : ''}<div class="result-relics">${run.inventory.map(id => `<span title="${relicOf(id).name}">${relicOf(id).symbol}</span>`).join('')}</div><div class="history-entry"><button class="text-button" data-action="history-result" aria-haspopup="dialog">プレイ履歴を見る →</button></div><button class="primary" data-action="result-home">次の冒険へ <span>↗</span></button><p class="quiet modal-footnote">戦績と解放した要素を保存しました。</p>`;
 }
 function quickHelp(): string {
   return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button>
@@ -154,16 +158,39 @@ function quickHelp(): string {
     <div class="quick-help-actions"><button class="text-button" data-action="help-details">詳しいルール</button><button class="secondary" data-action="close">タイトルへ戻る</button></div>`;
 }
 function closeModal(): void {
-  const trigger = modalTriggerAction;
-  modal = null; modalTriggerAction = null; render();
-  if (trigger) app.querySelector<HTMLElement>(`[data-action="${trigger}"]`)?.focus({ preventScroll: true });
+  const trigger = modalTriggerAction, returning = modal === 'history' ? historyReturn : null;
+  modal = null; modalTriggerAction = null; historyReturn = null; render();
+  const dialog = app.querySelector<HTMLElement>('[role="dialog"]');
+  if (returning && dialog) {
+    for (const [selector, open] of [['.contribution-details', returning.reportOpen], ['.equipment-editor', returning.equipmentOpen], ['.reward-breakdown', returning.breakdownOpen]] as const) {
+      const details = dialog.querySelector<HTMLDetailsElement>(selector);
+      if (details) details.open = open;
+    }
+    dialog.scrollTop = returning.scroll;
+  }
+  if (trigger) (dialog ?? app).querySelector<HTMLElement>(`[data-action="${trigger}"]`)?.focus({ preventScroll: true });
+}
+function openHistory(trigger: string): void {
+  const dialog = app.querySelector<HTMLElement>('[role="dialog"]');
+  historyReturn = dialog ? { scroll: dialog.scrollTop, reportOpen: !!dialog.querySelector<HTMLDetailsElement>('.contribution-details')?.open, equipmentOpen: !!dialog.querySelector<HTMLDetailsElement>('.equipment-editor')?.open, breakdownOpen: !!dialog.querySelector<HTMLDetailsElement>('.reward-breakdown')?.open } : null;
+  historyView = { runKey: save.history?.runs.at(-1)?.key, page: 0 };
+  modalTriggerAction = trigger; modal = 'history'; render();
+}
+function renderHistoryPage(): void {
+  // Replacing only the dialog keeps the board and reward state untouched.
+  const dialog = app.querySelector<HTMLElement>('.history-modal');
+  if (!dialog) return;
+  dialog.innerHTML = playHistory(save.history, historyView);
+  dialog.scrollTop = 0;
+  dialog.querySelector<HTMLElement>('[data-history-run]')?.focus({ preventScroll: true });
 }
 function modalBody(): string | null {
+  if (modal === 'history') return playHistory(save.history, historyView);
   if (modal === 'quick-help') return quickHelp();
   if (modal === 'help') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">HOW TO PLAY</div><h2>数字をつなぎ、魔法を紡ぐ。</h2><ol class="help-steps"><li><strong>青緑の数字から、起点を選ぶ</strong><p>候補が1つのマスに○と細い枠がつきます。連鎖の予告線の中でも、○のマスへ起点を選び直せます。●は選択中、金色の数字と線はその連鎖の予告です。上位・弱点のレンズの★は、現在の通常・スキルで最長の連鎖になるすべての起点です。</p></li><li><strong>予告を見比べて、詠唱する</strong><p>「連鎖のしくみ」で1マスずつ確認できます。直前に埋めたマスと同じ行・列・3×3区画にある確定マスへ進みます。最初から確定していたマスも対象です。縦の距離＋横の距離が近い順、同距離なら上の行・左の列を優先します。</p></li><li><strong>術式が育つほど、連鎖も長くなる</strong><p>Lv.1の導火術師は起点1＋自動4で最大5連鎖。レベルが1上がるたび、自動入力がさらに1回増えます。たとえば術式Lv.10・固有スキルLv.1なら、通常最大14連鎖、スキルで最大18連鎖。残り回数が0か、直前のマスからつながる確定マスがなくなると終了。1マス埋まるたびに候補を計算し直します。遺物で回数や飛び先が増えることもあります。</p></li><li><strong>完成・弱点・盾を狙う</strong><p>行・列の完成は光の奔流、3×3区画の完成は魔法陣のカットインと追加攻撃。シート完成時は、この一手で埋めた割合に応じて基礎攻撃の最大25%を加算。初期の空きマスを一度で埋め切る「一詠全成」が最大の完成加算です。✧は弱点、◇は守護＋6。守護は同じシートの間ずっと蓄積し、毎回の反撃を軽減します。残り数マスになっても消えません。敵が生き残ると、連鎖の後に反撃します。</p></li><li><strong>魔力8、または無料券でスキル</strong><p>未確定の空きマスからも始動できます。無料スキルの回数があるときは先に使い、魔力を温存します。無料回数がなければ魔力8を消費し、スキルの手は充電されません。固有スキルと追加2枠から、1詠唱に1つだけ選べます。魔力8と無料券はすべてのスキルで共通です。追加スキルの装備変更は報酬画面で行い、外しても所持とレベルは残ります。スキルはLv.10まで成長し、Lv.5・10で進化します。蓄電石の余剰魔力は、有料スキルの発動後に引き継ぎます。</p></li><li><strong>シートを重ね、どこまでも連戦</strong><p>上位・長い導火線があると、シート完成時に自動入力回数が残っていれば次のシートへ連鎖を続けます。新しいシートの最初の入力も自動入力1回を使います。攻撃と敵の反撃は全シートの連鎖が終わってから1回だけ。守護はシートごとに0に戻り、反撃にはこの詠唱中に得た最も高いシート守護を使います。シート完成と敵撃破で術式レベルが1ずつ上がり、自動入力＋1回、攻撃倍率＋0.2、最大HP＋4、HPを最大10回復。敵撃破で残りの盤面を一掃し、3択で新しい力を選びます。5戦ごとにボスが登場し、スキルを選ぶ1/2、遺物を選ぶ2/2の順に、両方の報酬を受け取れます。選択は段階ごとに保存されます。遺物はLv.10まで育ち、通常・上位・極位の段階はレベルと別に成長します。二・三・五・七の護符は、最初の3回で発動確率が30%、45%、60%と育ち、その後もレベルに応じて成長します。二は反撃軽減、三は攻撃倍率、五は無料スキル、七は次の手の自動入力を予約します。無料スキルの所持中・使用中は五の護符を抽選しないため、無料回数はそのまま使い切れます。それぞれの数字を含む連鎖で、各護符を詠唱確定時に1回抽選。確定ダメージと発動時ダメージを分けて予告します。遺物が出尽くしても修練・最大HP強化・5戦の祝福などの選択が続きます。祝福は再取得すると残り5戦に更新され、重複しません。HPが尽きるまで連戦は続き、一掃はシート完成の成長・得点・充電の対象外です。</p></li></ol><p class="help-note">時間制限はありません。PCでは矢印キーでマスを移動し、Enterで選択できます。入力は「詠唱する」で確定します。</p>`;
   if (modal === 'settings') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">PREFERENCES</div><h2>詠唱のひとときを整える。</h2><div class="settings-list">${[{ key: 'sound', name: '効果音', text: '操作・魔法・打撃・防御・成長を異なる音で演出します。' }, { key: 'fast', name: '演出を短く', text: '連鎖・魔法カットイン・反撃・シート切替を短縮します。' }, { key: 'reducedMotion', name: '動きを抑える', text: '揺れや閃光を止め、攻撃と成長を文字で表示します。' }].map(s => `<label><span><strong>${s.name}</strong><small>${s.text}</small></span><input type="checkbox" data-setting="${s.key}" ${save.settings[s.key as keyof typeof save.settings] ? 'checked' : ''}></label>`).join('')}</div><p class="help-note">進行はこのブラウザに自動保存されます。別の端末とは共有されません。サイトデータを削除すると記録も消えます。</p><p class="help-note">効果音素材：Kenney / JaggedStone（CC0）。<a href="./audio-licenses/CREDITS.txt" target="_blank" rel="noopener">出典とライセンス</a></p>`;
   if (modal === 'codex') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">THE RELIC ARCHIVE</div><h2>詠唱を育てる、${RELICS.length}の遺物。</h2><p class="modal-intro">累計 ${save.meta.clears} 戦クリア · 解放した遺物は次の冒険から出現します。各遺物はLv.10まで育ち、通常・上位・極位へ進化します。</p><div class="codex-grid">${RELICS.map(r => `<article class="codex-item ${r.unlock > save.meta.clears ? 'locked' : ''}"><span>${r.symbol}</span><div><small>${r.kind}</small><h3>${r.name}</h3><p>${esc(relicGrowthDescription({ ...demoRun, inventory: [r.id], relicLevels: { [r.id]: 1 }, acquisitionRank: {}, tier: {} }, r.id))}</p>${r.unlock > save.meta.clears ? `<b>累計${r.unlock}戦クリアで解放</b>` : '<b class="unlocked">解放済み</b>'}</div></article>`).join('')}</div>`;
-  if (modal === 'restart') return `<div class="modal-eyebrow">A NEW JOURNEY</div><h2>新しい冒険をはじめますか？</h2><p class="modal-intro">今の冒険の進行は置き換わります。これまでの戦績と解放した要素は残ります。</p><div class="dialog-actions"><button class="secondary" data-action="close">戻る</button><button class="primary" data-action="restart">新しい冒険をはじめる ↗</button></div>`;
+  if (modal === 'restart') return `<div class="modal-eyebrow">A NEW JOURNEY</div><h2>新しい冒険をはじめますか？</h2><p class="modal-intro">今の冒険の進行は置き換わります。これまでの戦績と解放した要素は残ります。プレイ履歴は保存上限の範囲で残ります。</p><div class="dialog-actions"><button class="secondary" data-action="close">戻る</button><button class="primary" data-action="restart">新しい冒険をはじめる ↗</button></div>`;
   if (view === 'battle' && save.run?.phase === 'reward') return reward(save.run);
   if (view === 'battle' && save.run && ['won', 'lost'].includes(save.run.phase)) return result(save.run);
   return null;
@@ -174,14 +201,19 @@ function render(displayRun = save.run): void {
   const actionFocus = focus?.dataset.action;
   const oldDialog = document.querySelector<HTMLElement>('[role="dialog"]');
   const hadModal = !!oldDialog, modalScroll = oldDialog?.scrollTop ?? 0;
-  const sameRewardStep = oldDialog?.dataset.rewardStep === (save.run?.rewardStep ?? '');
+  const sameModal = oldDialog?.dataset.modalKind === (modal ?? save.run?.phase ?? '');
+  const sameRewardStep = sameModal && oldDialog?.dataset.rewardStep === (save.run?.rewardStep ?? '');
   const reportDetailsOpen = !!app.querySelector<HTMLDetailsElement>('.contribution-details')?.open;
   const equipmentOpen = app.querySelector<HTMLDetailsElement>('.equipment-editor')?.open;
   const focusedData = ['select-skill', 'equip-skill', 'report-window'].find(key => focus?.hasAttribute(`data-${key}`));
   const focusedValue = focusedData ? focus?.getAttribute(`data-${focusedData}`) : null;
-  const body = busy ? null : modalBody();
+  // Async board loading and responsive redraws must not close a read-only
+  // history tree or discard its nested pagination/focus while it is being read.
+  const keepHistoryDialog = !busy && modal === 'history' && sameModal ? oldDialog : null;
+  const body = busy ? null : keepHistoryDialog ? ' ' : modalBody();
   document.documentElement.classList.toggle('reduced-motion', save.settings.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches);
-  app.innerHTML = `<div class="app-shell" ${body ? 'inert' : ''}>${header()}${warning ? `<div class="warning" role="alert">${esc(warning)}</div>` : ''}<main>${view === 'battle' && displayRun ? battle(displayRun) : home()}</main></div><div id="modal-layer">${body ? `<div class="modal-backdrop"><section class="modal ${modal === 'quick-help' ? 'quick-help' : ''} ${modal === 'codex' ? 'wide' : ''} ${!modal && save.run?.phase === 'reward' ? 'reward-modal' : ''}" role="dialog" data-reward-step="${save.run?.rewardStep ?? ''}" aria-modal="true" aria-label="${modal === 'codex' ? '遺物図鑑' : modal === 'settings' ? '設定' : modal === 'help' || modal === 'quick-help' ? '遊び方' : modal === 'restart' ? '新しい冒険' : save.run?.phase === 'reward' ? '成長の選択' : '冒険の結果'}" tabindex="-1">${body}</section></div>` : ''}</div><div class="sr-only" aria-live="polite">${busy ? '連鎖を詠唱しています' : prediction ? `${esc(accessiblePrediction(prediction))}` : ''}</div>`;
+  app.innerHTML = `<div class="app-shell" ${body ? 'inert' : ''}>${header()}${warning ? `<div class="warning" role="alert">${esc(warning)}</div>` : ''}<main>${view === 'battle' && displayRun ? battle(displayRun) : home()}</main></div><div id="modal-layer">${body ? `<div class="modal-backdrop"><section class="modal ${modal === 'quick-help' ? 'quick-help' : ''} ${modal === 'history' ? 'history-modal' : ''} ${modal === 'codex' ? 'wide' : ''} ${!modal && save.run?.phase === 'reward' ? 'reward-modal' : ''}" role="dialog" data-modal-kind="${modal ?? save.run?.phase ?? ''}" data-reward-step="${save.run?.rewardStep ?? ''}" aria-modal="true" aria-label="${modal === 'history' ? 'プレイ履歴' : modal === 'codex' ? '遺物図鑑' : modal === 'settings' ? '設定' : modal === 'help' || modal === 'quick-help' ? '遊び方' : modal === 'restart' ? '新しい冒険' : save.run?.phase === 'reward' ? '成長の選択' : '冒険の結果'}" tabindex="-1">${body}</section></div>` : ''}</div><div class="sr-only" aria-live="polite">${busy ? '連鎖を詠唱しています' : prediction ? `${esc(accessiblePrediction(prediction))}` : ''}</div>`;
+  if (keepHistoryDialog) app.querySelector('[role="dialog"]')?.replaceWith(keepHistoryDialog);
   if (view === 'battle' && displayRun) {
     if (board) {
       board.mount(document.getElementById('board-slot')!);
@@ -206,8 +238,12 @@ function render(displayRun = save.run): void {
     const dialog = app.querySelector<HTMLElement>('[role="dialog"]');
     if (dialog) dialog.scrollTop = modalScroll;
   }
-  if (focusedData && focusedValue) app.querySelector<HTMLElement>(`[data-${focusedData}="${focusedValue}"]`)?.focus({ preventScroll: true });
-  else if (body && hadModal && !sameRewardStep) app.querySelector<HTMLElement>('[role="dialog"]')?.focus({ preventScroll: true });
+  if (keepHistoryDialog && focus && keepHistoryDialog.contains(focus)) focus.focus({ preventScroll: true });
+  else if (focusedData && focusedValue) app.querySelector<HTMLElement>(`[data-${focusedData}="${focusedValue}"]`)?.focus({ preventScroll: true });
+  else if (body && hadModal && !sameRewardStep) {
+    const dialog = app.querySelector<HTMLElement>('[role="dialog"]');
+    (modal === 'history' ? dialog?.querySelector<HTMLElement>('button') : dialog)?.focus({ preventScroll: true });
+  }
   else if (body && !hadModal) {
     const dialog = app.querySelector<HTMLElement>('[role="dialog"]');
     (dialog?.querySelector<HTMLElement>('button') ?? dialog)?.focus({ preventScroll: true });
@@ -266,7 +302,7 @@ function setSound(enabled: boolean): void {
   if (button) { button.textContent = enabled ? '♪' : '♫̸'; button.setAttribute('aria-label', enabled ? '消音する' : '音をオンにする'); }
 }
 app.addEventListener('click', event => {
-  if ((event.target as HTMLElement).classList.contains('modal-backdrop') && (modal === 'quick-help' || modalTriggerAction === 'quick-help')) { closeModal(); return; }
+  if ((event.target as HTMLElement).classList.contains('modal-backdrop') && (modal === 'quick-help' || modalTriggerAction === 'quick-help' || modal === 'history')) { closeModal(); return; }
   const element = (event.target as HTMLElement).closest<HTMLElement>('button');
   if (!element || element.hasAttribute('disabled')) return;
   // Muting stays available during the committed animation; keep its DOM intact.
@@ -276,6 +312,17 @@ app.addEventListener('click', event => {
   if (save.settings.sound) audio.unlock();
   if (element.dataset.cell !== undefined) { if (!guideOpen) return select(Number(element.dataset.cell)); return; }
   if (element.dataset.character) { if (save.settings.sound) audio.ui('select'); chosen = element.dataset.character as CharacterId; render(); return; }
+  if (element.dataset.historyPage !== undefined) { historyView.page = Number(element.dataset.historyPage); renderHistoryPage(); return; }
+  if (element.dataset.historyCastsPage !== undefined) {
+    const details = element.closest<HTMLDetailsElement>('[data-history-battle]');
+    const battle = selectedHistoryRun(save.history, historyView)?.battles.find(item => item.stage === Number(details?.dataset.historyBattle));
+    const content = details?.querySelector<HTMLElement>('.history-battle-content');
+    if (battle && content) {
+      content.innerHTML = historyBattleDetails(battle, Number(element.dataset.historyCastsPage));
+      content.querySelector<HTMLElement>('.history-cast>summary')?.focus();
+    }
+    return;
+  }
   if (element.dataset.reportWindow) { reportBossOnly = element.dataset.reportWindow === 'boss'; render(); return; }
   if (element.dataset.equipSkill && save.run?.phase === 'reward') {
     const id = element.dataset.equipSkill as SkillId, equipped = save.run.equippedSkills ?? [];
@@ -304,6 +351,8 @@ app.addEventListener('click', event => {
     case 'home': case 'result-home': guideOpen = false; view = 'home'; modal = null; selected = null; prediction = null; skill = false; render(); break;
     case 'quick-help': case 'help': case 'settings': case 'codex': modalTriggerAction = element.dataset.action; modal = element.dataset.action; render(); break;
     case 'help-details': modal = 'help'; render(); app.querySelector<HTMLElement>('[role="dialog"]')?.scrollTo({ top: 0 }); app.querySelector<HTMLElement>('.modal-close')?.focus({ preventScroll: true }); break;
+    case 'history': case 'history-reward': case 'history-report': case 'history-result': openHistory(element.dataset.action); break;
+    case 'history-export': if (save.history) downloadPlayHistory(save.history); break;
     case 'close': closeModal(); break;
     case 'tutorial-close': tutorialHidden = true; save.meta.tutorialDone = true; persistNow(); render(); break;
     case 'skill':
@@ -326,6 +375,7 @@ app.addEventListener('click', event => {
 });
 app.addEventListener('change', event => {
   const element = event.target as HTMLInputElement;
+  if (element.hasAttribute('data-history-run')) { historyView = { runKey: element.value, page: 0 }; renderHistoryPage(); return; }
   if (!element.dataset.setting) return;
   if (element.dataset.setting === 'sound') setSound(element.checked);
   else {
@@ -335,12 +385,27 @@ app.addEventListener('change', event => {
   }
   document.documentElement.classList.toggle('reduced-motion', save.settings.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches);
 });
+app.addEventListener('toggle', event => {
+  const details = event.target;
+  if (!(details instanceof HTMLDetailsElement) || !details.open || modal !== 'history') return;
+  const content = details.querySelector<HTMLElement>(':scope > [data-history-content]');
+  if (!content || content.dataset.loaded) return;
+  const run = selectedHistoryRun(save.history, historyView);
+  const battleDetails = details.closest<HTMLDetailsElement>('[data-history-battle]');
+  const battle = run?.battles.find(item => item.stage === Number(battleDetails?.dataset.historyBattle));
+  if (!battle) return;
+  if (details.dataset.historyCast !== undefined) {
+    const cast = battle.casts.find(item => item.id === Number(details.dataset.historyCast));
+    if (cast) content.innerHTML = historyCastDetails(cast);
+  } else if (details.dataset.historyBattle !== undefined) content.innerHTML = historyBattleDetails(battle);
+  content.dataset.loaded = 'true';
+}, true);
 app.addEventListener('keydown', event => {
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
   if (dialog) {
     if (event.key === 'Escape' && modal) { event.preventDefault(); closeModal(); return; }
     if (event.key === 'Tab') {
-      const stops = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input, [tabindex="0"]')];
+      const stops = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, a[href], [tabindex="0"]')].filter(element => element.getClientRects().length > 0 && !element.closest('[inert]'));
       if (!stops.length) { event.preventDefault(); dialog.focus(); }
       else if (event.shiftKey && (document.activeElement === stops[0] || document.activeElement === dialog)) { event.preventDefault(); stops.at(-1)!.focus(); }
       else if (!event.shiftKey && document.activeElement === stops.at(-1)) { event.preventDefault(); stops[0].focus(); }

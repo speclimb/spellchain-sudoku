@@ -6,6 +6,8 @@ import { newSave } from './engine';
 import { relicValues, skillValues } from './growth';
 import { applyEnemyArmor, enemyForRun } from './enemies';
 import type { Run, Save, RelicId } from './types';
+import { boundHistory, emptyHistory, ensureHistoryRun, historyKey } from './history';
+import { parseHistory } from './history-validation';
 export const SAVE_KEY = 'chain-incantation.save.v1';
 const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -93,6 +95,20 @@ export function parseSave(raw: string): Save {
     validateContributions(r as Run);
   }
   if (data.meta.bestKills === undefined) data.meta.bestKills = Math.max(data.meta.wins ? 6 : 0, r?.stats.kills ?? 0);
+  if (data.history !== undefined) {
+    const history = parseHistory(data.history);
+    // A future/stale optional log must never suppress a real committed event.
+    const current = history?.runs.find(item => item.number === data.meta.runs);
+    const matchesCore = !history?.runs.some(item => item.number > data.meta.runs)
+      && (!current || (r && current.key === historyKey(data as unknown as Save)
+        && current.seed === r.seed && current.character === r.character
+        && current.sinceCast <= r.castCounter
+        && current.battles.reduce((count,battle) => count + battle.ledger.casts,0) <= r.castCounter-current.sinceCast
+        && current.battles.every(battle => battle.stage <= r.stage
+          && battle.casts.every(cast => cast.id <= r.castCounter)
+          && battle.rewards.every(reward => reward.revision <= r.revision))));
+    if (history && matchesCore) data.history = history; else delete data.history;
+  }
   return data as unknown as Save;
 }
 /** Reports are persisted before animation. Validate each sheet independently so
@@ -281,7 +297,11 @@ function validateContributions(run: Run): void {
 export function loadSave(): { save: Save; warning: string } {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) return { save: parseSave(raw), warning: '' };
+    if (raw) {
+      const save = parseSave(raw), invalidHistory = JSON.parse(raw).history !== undefined && !save.history;
+      ensureHistoryRun(save);
+      return { save, warning: invalidHistory ? 'プレイ履歴を読み込めませんでした。冒険の進行は保持し、更新後の詠唱から記録を再開します。' : '' };
+    }
     const save = newSave();
     save.settings.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     return { save, warning: '' };
@@ -290,6 +310,23 @@ export function loadSave(): { save: Save; warning: string } {
   }
 }
 export function persist(save: Save): string {
+  if (save.history) boundHistory(save.history);
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); return ''; }
-  catch { return 'このブラウザでは保存できません。ページを閉じると今回の進行が失われる可能性があります。'; }
+  catch {
+    // setItem is atomic: never remove the last good save to make room. Retry
+    // smaller optional logs, retaining the exact current board and reward state.
+    const compact = structuredClone(save);
+    for (const bytes of [128 * 1024, 32 * 1024, 0]) {
+      if (!compact.history) break;
+      if (bytes) boundHistory(compact.history, bytes);
+      else { const omittedRuns = compact.history.omittedRuns + compact.history.runs.length; compact.history = { ...emptyHistory(), omittedRuns }; }
+      compact.history.storageReduced = true;
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(compact));
+        save.history = compact.history;
+        return '保存容量が少ないため、古いプレイ履歴を整理しました。冒険の進行は保存済みです。履歴の保持範囲を確認してください。';
+      } catch { /* Previous persisted state remains intact. */ }
+    }
+    return 'このブラウザでは保存できません。以前の保存は消していません。ページを閉じると今回の進行が失われる可能性があります。';
+  }
 }
