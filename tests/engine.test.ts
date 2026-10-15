@@ -51,9 +51,14 @@ function recordEncounter(samples: EncounterSample[], before: Run, after: Run) {
 }
 
 describe('validated puzzles and transformed boards', () => {
-  it('ships 30 distinct puzzles with 36 blanks, one solution, and a singles-only solution', () => {
-    expect(bank).toHaveLength(30);
-    expect(new Set(bank.map(p => p.puzzle)).size).toBe(30);
+  it('ships 100 distinct puzzles with 36 blanks, one solution, and a singles-only solution', () => {
+    expect(bank).toHaveLength(100);
+    expect(new Set(bank.map(p => p.id)).size).toBe(bank.length);
+    expect(new Set(bank.map(p => p.puzzle)).size).toBe(bank.length);
+    const masks = bank.map(p => [...p.puzzle].map(value => value === '0'));
+    for (let left = 0; left < masks.length; left++) for (let right = left + 1; right < masks.length; right++) {
+      expect(masks[left].filter((blank, cell) => blank !== masks[right][cell]).length).toBeGreaterThanOrEqual(18);
+    }
     for (const puzzle of bank) {
       const cells = [...puzzle.puzzle].map(Number);
       expect(cells.filter(v => !v)).toHaveLength(36);
@@ -62,9 +67,9 @@ describe('validated puzzles and transformed boards', () => {
     }
   });
   it('keeps valid solutions, nonrepeated source puzzles, and six distinct marks after transformations', () => {
-    for (let seed = 0; seed < 30; seed++) {
+    for (let seed = 0; seed < bank.length; seed++) {
       const run = fixture(seed).run!;
-      expect(new Set(run.puzzleOrder).size).toBe(30);
+      expect(new Set(run.puzzleOrder).size).toBe(bank.length);
       expect(solveSingles(run.cells)).toEqual(run.solution);
       expect(run.marks.filter(m => m === 'weak')).toHaveLength(3);
       expect(run.marks.filter(m => m === 'shield')).toHaveLength(3);
@@ -377,11 +382,12 @@ describe('progression, rewards and persistence', () => {
     const advanced = resolveAction(result, { type: 'reward', relic: result.rewards.find(id => id !== 'glass' && id !== 'training')!, revision: result.revision });
     expect(advanced).toMatchObject({ stage: 1, spellLevel: 6, sheet: 2, encounterSheet: 1, turn: 0, enemyHp: ENEMIES[1].hp });
   });
-  it('uses all 30 sources before deterministic replenishment without an immediate repeat', () => {
+  it('uses every source once per deck before deterministic replenishment without boundary repeats', () => {
     let run = fixture(61).run!;
     run.stage = 5; run.stats.kills = 5;
     const firstDeck = [...run.puzzleOrder], sources = [run.puzzleOrder[run.puzzleCursor]];
-    for (let sheet = 1; sheet <= 32; sheet++) {
+    const completedSheets = bank.length * 2 + 2;
+    for (let sheet = 1; sheet <= completedSheets; sheet++) {
       run.enemyHp = enemyOf(run.stage).hp;
       const cell = leaveLastCell(run), before = structuredClone(run), forecast = previewAction(run, cell);
       const next = resolveAction(run, play(run, cell));
@@ -389,10 +395,14 @@ describe('progression, rewards and persistence', () => {
       run = next; sources.push(run.puzzleOrder[run.puzzleCursor]);
       expect(parseSave(JSON.stringify({ ...newSave(), run })).run).toEqual(run);
     }
-    expect(sources.slice(0, 30)).toEqual(firstDeck); expect(new Set(sources.slice(0, 30)).size).toBe(30);
-    expect(sources[30]).not.toBe(sources[29]); expect(run.puzzleOrder).not.toEqual(firstDeck);
-    expect(run.puzzleCursor).toBe(2); expect(run.sheet).toBe(33); expect(run.stats.sheets).toBe(32);
-    expect(run.spellLevel).toBe(33);
+    expect(sources.slice(0, bank.length)).toEqual(firstDeck);
+    for (let deck = 0; deck < 2; deck++) {
+      expect(new Set(sources.slice(deck * bank.length, (deck + 1) * bank.length)).size).toBe(bank.length);
+      expect(sources[(deck + 1) * bank.length]).not.toBe(sources[(deck + 1) * bank.length - 1]);
+    }
+    expect(run.puzzleOrder).not.toEqual(firstDeck);
+    expect(run.puzzleCursor).toBe(2); expect(run.sheet).toBe(completedSheets + 1); expect(run.stats.sheets).toBe(completedSheets);
+    expect(run.spellLevel).toBe(completedSheets + 1);
   });
   it('migrates original six-board v1 runs without rerolling current boards, HP, rewards or random state', () => {
     let save = fixture(91);
@@ -402,19 +412,20 @@ describe('progression, rewards and persistence', () => {
     }
     const legacy = structuredClone(save) as any, original = structuredClone(save.run!);
     legacy.run.maxHp = 32; legacy.run.hp = 24; legacy.run.enemyHp = 340; legacy.run.mana = 5; legacy.run.turn = 7;
-    legacy.run.afterglow = true; legacy.run.puzzleOrder = legacy.run.puzzleOrder.slice(0, 6);
+    legacy.run.afterglow = true;
+    legacy.run.puzzleOrder = legacy.run.puzzleOrder.filter((source: number) => source < 30).slice(0, 6);
     for (const key of ['spellLevel', 'sheet', 'encounterSheet', 'puzzleCursor']) delete legacy.run[key];
     delete legacy.run.stats.sheets;
     const restored = parseSave(JSON.stringify(legacy));
     expect(restored.run).toMatchObject({ spellLevel: 3, sheet: 3, encounterSheet: 1, puzzleCursor: 2, maxHp: 32, hp: 24, enemyHp: 340, mana: 5, turn: 7, afterglow: true, randomState: original.randomState, revision: original.revision });
     expect(restored.run!.cells).toEqual(original.cells); expect(restored.run!.solution).toEqual(original.solution);
     expect(restored.run!.puzzleOrder.slice(0, 6)).toEqual(legacy.run.puzzleOrder);
-    expect(new Set(restored.run!.puzzleOrder).size).toBe(30); expect(restored.run!.stats.sheets).toBe(0);
+    expect(new Set(restored.run!.puzzleOrder).size).toBe(bank.length); expect(restored.run!.stats.sheets).toBe(0);
     expect(parseSave(JSON.stringify(legacy))).toEqual(restored); expect(parseSave(JSON.stringify(restored))).toEqual(restored);
     expect(dispatch(parseSave(JSON.stringify(restored)), play(restored.run!))).toEqual(dispatch(restored, play(restored.run!)));
-    const invalid = structuredClone(restored); invalid.run!.puzzleCursor = 30;
+    const invalid = structuredClone(restored); invalid.run!.puzzleCursor = bank.length;
     expect(() => parseSave(JSON.stringify(invalid))).toThrow('成長');
-    invalid.run!.puzzleCursor = 2; invalid.run!.puzzleOrder[29] = invalid.run!.puzzleOrder[0];
+    invalid.run!.puzzleCursor = 2; invalid.run!.puzzleOrder[bank.length - 1] = invalid.run!.puzzleOrder[0];
     expect(() => parseSave(JSON.stringify(invalid))).toThrow('問題');
   });
   it('offers every relic from the start while keeping cumulative character unlocks', () => {
@@ -462,9 +473,8 @@ describe('progression, rewards and persistence', () => {
     const invalid = structuredClone(next); invalid.run!.solution[0] = 0;
     expect(() => parseSave(JSON.stringify(invalid))).toThrow();
   });
-  it('continues beyond six encounters and eventually loses to actual attacks without stalling', () => {
-    const results: { seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; finalAttack: number; shield: number; encounters: EncounterSample[] }[] = [];
-    for (let seed = 1; seed <= 6; seed++) {
+  const endlessResults: { seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; finalAttack: number; shield: number; encounters: EncounterSample[] }[] = [];
+  it.each([1, 2, 3, 4, 5, 6])('continues beyond six encounters and eventually loses to actual attacks without stalling (seed %i)', seed => {
       let save = fixture(seed, 'fuse', 0);
       const encounters: EncounterSample[] = [];
       const visited = [save.run!.puzzleOrder[save.run!.puzzleCursor]];
@@ -487,10 +497,9 @@ describe('progression, rewards and persistence', () => {
       expect(run.phase).toBe('lost'); expect(run.stats.kills).toBeGreaterThan(6);
       expect(run.stats.bestChain).toBeGreaterThanOrEqual(20); expect(run.lastReport!.received).toBeGreaterThanOrEqual(run.lastReport!.hpBefore);
       expect(save.meta.bestKills).toBe(run.stats.kills); expect(save.meta.wins).toBe(0); expect(save.meta.bestScore).toBe(run.score);
-      results.push({ seed, phase: run.phase, kills: run.stats.kills, moves: run.stats.moves, sheets: run.sheet, level: run.spellLevel, hp: run.hp, maxHp: run.maxHp, bestChain: run.stats.bestChain, finalAttack: run.lastReport!.incoming, shield: run.lastReport!.shield, encounters });
-    }
+      endlessResults.push({ seed, phase: run.phase, kills: run.stats.kills, moves: run.stats.moves, sheets: run.sheet, level: run.spellLevel, hp: run.hp, maxHp: run.maxHp, bestChain: run.stats.bestChain, finalAttack: run.lastReport!.incoming, shield: run.lastReport!.shield, encounters });
     mkdirSync('.runtime', { recursive: true });
-    writeFileSync('.runtime/balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with ward/recovery priority, not a human playtest', runs: results.length, results }, null, 2));
+    writeFileSync('.runtime/balance-sample.json', JSON.stringify({ method: 'Deterministic informed endless play with ward/recovery priority, not a human playtest', runs: endlessResults.length, results: endlessResults }, null, 2));
   }, 180000);
   it('lets every character reach long chains without prime charms before enemy inflation outgrows the run', () => {
     const results: { character: CharacterId; seed: number; phase: Run['phase']; kills: number; moves: number; sheets: number; level: number; hp: number; maxHp: number; bestChain: number; encounters: EncounterSample[] }[] = [];

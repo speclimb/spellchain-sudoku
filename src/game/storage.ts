@@ -73,6 +73,13 @@ export function parseSaveData(data: unknown): Save {
       r.spellLevel = 1 + (record(r.stats) && integer(r.stats.kills, 0, 6) ? r.stats.kills : 0);
       if (record(r.stats)) r.stats.sheets = 0;
     }
+    // Expand a genuine 30-source deck without rerolling its prefix, the current
+    // board, or the live board/reward stream. Newly added sources come after it.
+    if (Array.isArray(r.puzzleOrder) && r.puzzleOrder.length === 30 && bank.length > 30) {
+      if (!vector(r.puzzleOrder, 30, v => integer(v, 0, 29)) || new Set(r.puzzleOrder).size !== 30 || !integer(r.puzzleCursor, 0, 29)) throw new Error('問題の記録が不正です。');
+      const unused = bank.map((_, i) => i).filter(i => !r.puzzleOrder.includes(i));
+      r.puzzleOrder = [...r.puzzleOrder, ...new Random(r.seed ^ 0x100ca7).shuffle(unused)];
+    }
     if (!integer(r.puzzleCursor, 0, bank.length - 1) || !integer(r.sheet, 1) || !integer(r.encounterSheet, 1, r.sheet) || !integer(r.spellLevel, 1, 1000000)) throw new Error('成長の記録が不正です。');
     if (!vector(r.solution, 81, v => integer(v, 1, 9)) || !UNITS.every(u => new Set(u.map(i => r.solution[i])).size === 9) || !vector(r.cells, 81, v => integer(v, 0, 9)) || !r.cells.every((v: number, i: number) => v === 0 || v === r.solution[i]) || !vector(r.givens, 81, v => typeof v === 'boolean') || r.givens.filter(Boolean).length !== 45 || !r.givens.every((v: boolean, i: number) => !v || r.cells[i] !== 0)) throw new Error('盤面の記録が不正です。');
     if (!vector(r.marks, 81, v => v === null || v === 'weak' || v === 'shield') || ['weak', 'shield'].some(kind => r.marks.filter((v: string) => v === kind).length !== 3) || !vector(r.puzzleOrder, bank.length, v => integer(v, 0, bank.length - 1)) || new Set(r.puzzleOrder).size !== bank.length) throw new Error('問題の記録が不正です。');

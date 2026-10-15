@@ -1,4 +1,5 @@
 import bank from './puzzles.json';
+import { createBoardLayout } from './board-generation';
 import { CHARACTERS, RELICS } from './content';
 import { canTakeReward, rollRewards, rollSkillRewards, rollRelicRewards, applyGrowthReward } from './rewards';
 import { skillLevel, selectedSkill, skillValues, relicValues } from './growth';
@@ -7,7 +8,7 @@ import { effectMetrics, recordContribution } from './contributions';
 import { prepareRelicReward } from './relic-slots';
 import { beginHistory, ensureHistoryRun, recordHistory, forkHistory, historyKey } from './history';
 export { canTakeReward } from './rewards';
-import { Random, PEERS, UNITS, candidates, near, row, col } from './sudoku';
+import { Random, connectedSingles, UNITS, candidates, near, row, col } from './sudoku';
 import type { Action, ChainTrace, FillEvent, Mark, Report, Preview, Run, Save, CharacterId, RelicId, PrimeEffect, PrimeRelicId, PrimeProcOutcome, SheetSegment, SkillId, EffectMetric } from './types';
 
 export function newSave(): Save {
@@ -15,13 +16,9 @@ export function newSave(): Save {
 }
 function prepareBoard(run: Run, random: Random): void {
   const source = bank[run.puzzleOrder[run.puzzleCursor]];
-  const rows = random.shuffle([0, 1, 2]).flatMap(b => random.shuffle([0, 1, 2]).map(r => b * 3 + r));
-  const cols = random.shuffle([0, 1, 2]).flatMap(b => random.shuffle([0, 1, 2]).map(c => b * 3 + c));
-  const digits = [0, ...random.shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9])];
-  const transpose = random.next() < 0.5;
-  const indexes = rows.flatMap(r => cols.map(c => transpose ? c * 9 + r : r * 9 + c));
-  run.cells = indexes.map(i => digits[Number(source.puzzle[i])]);
-  run.solution = indexes.map(i => digits[Number(source.solution[i])]);
+  const layout = createBoardLayout(source, random);
+  run.cells = layout.cells;
+  run.solution = layout.solution;
   run.givens = run.cells.map(Boolean);
   run.marks = Array<Mark>(81).fill(null);
   const marked = random.shuffle(run.cells.flatMap((n, i) => n ? [] : [i])).slice(0, 6);
@@ -110,7 +107,7 @@ function measureSheet(source: Run, root: number, fuel: number, rekindled: boolea
   };
   fill(root);
   while (fuel > 0) {
-    let eligible = PEERS[current].filter(i => !cells[i] && candidates(cells, i).length === 1).sort((a, b) => near(current, a, b));
+    let eligible = connectedSingles(cells, current);
     if (!eligible.length && hopsLeft > 0) {
       eligible = cells.flatMap((v, i) => !v && source.solution[i] === source.solution[current] ? [i] : []).sort((a, b) => near(current, a, b));
       if (eligible.length) hopsLeft--;
@@ -144,8 +141,8 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   const damageRelics = ['pen', 'lens', 'stroke', 'glass', 'amplifier', 'echo'] as const;
   const glassMultiplier = relicValues(run, 'glass').damageMultiplier;
   const amplifierMultiplier = skill ? relicValues(run, 'amplifier').skillMultiplier : 1;
-  const relicMultiplier = run.relicBalanceVersion ? glassMultiplier + amplifierMultiplier - 1 : glassMultiplier * amplifierMultiplier;
-  const multiplier = spellMultiplier(source.spellLevel) * relicMultiplier * (values?.damageMultiplier ?? 1);
+  const multiplierFor = (glass: number, amplifier: number) => spellMultiplier(source.spellLevel) * (run.relicBalanceVersion ? glass + amplifier - 1 : glass * amplifier) * (values?.damageMultiplier ?? 1);
+  const multiplier = multiplierFor(glassMultiplier, amplifierMultiplier);
   const completionMultiplier = values?.completionMultiplier ?? 1;
   const path: FillEvent[] = [], segments: SheetSegment[] = [];
   let segment: SheetSegment, initiallySingle: boolean[];
@@ -168,8 +165,9 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     maxMarkedShield = Math.max(maxMarkedShield, sheetShield(run) - wardPart);
     wardShield = maxShield - maxMarkedShield;
     for (const id of damageRelics) if (has(id)) {
-      const factor = id === 'glass' ? glassMultiplier : id === 'amplifier' ? amplifierMultiplier : 1;
-      const withoutMultiplier = run.relicBalanceVersion ? multiplier * (relicMultiplier - (factor - 1)) / relicMultiplier : multiplier / factor;
+      // Match a real cast without this relic, including operation order before
+      // flooring. Dividing the combined multiplier can lose an integer point.
+      const withoutMultiplier = multiplierFor(id === 'glass' ? 1 : glassMultiplier, id === 'amplifier' ? 1 : amplifierMultiplier);
       const base = Math.floor((rawWithout[id] ?? rawDamage) * withoutMultiplier);
       const clear = segment.fullClear && blanks ? Math.floor(base * filled / (4 * blanks)) : 0;
       const total = without[id] ??= { base: 0, clear: 0 }; total.base += base; total.clear += clear;
@@ -239,7 +237,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
       fill(best, 'chain', null, roots, false, true); current = best;
       continue;
     }
-    let eligible = PEERS[current].filter(i => !run.cells[i] && candidates(run.cells, i).length === 1).sort((a, b) => near(current, a, b));
+    let eligible = connectedSingles(run.cells, current);
     let hop = false, bridge = false;
     if (!eligible.length && hopsLeft > 0) {
       eligible = run.cells.flatMap((v, i) => !v && run.solution[i] === run.solution[current] ? [i] : []).sort((a, b) => near(current, a, b));

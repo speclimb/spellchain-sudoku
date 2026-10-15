@@ -51,6 +51,10 @@ export function near(origin: number, a: number, b: number): number {
   return (Math.abs(row(origin) - row(a)) + Math.abs(col(origin) - col(a))) -
     (Math.abs(row(origin) - row(b)) + Math.abs(col(origin) - col(b))) || a - b;
 }
+/** The same peer-single ordering is used by casts and fresh-board screening. */
+export function connectedSingles(cells: number[], current: number): number[] {
+  return PEERS[current].filter(i => !cells[i] && candidates(cells, i).length === 1).sort((a, b) => near(current, a, b));
+}
 export class Random {
   state: number;
   constructor(seed: number) { this.state = seed >>> 0; }

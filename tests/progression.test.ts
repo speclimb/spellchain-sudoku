@@ -372,6 +372,12 @@ describe('progression save validation', () => {
 describe('exact clear bonus arithmetic', () => {
   it('does not lose an integer damage point to floating ratio rounding', () => {
     const run = fixture(1).run!; run.inventory = ['stroke']; run.spellLevel = 36;
+    // Preserve the exact arithmetic regression board independently of bank curation.
+    run.cells = [...'934800050751004060602107934349086510517430082006705040000043020400608100000071003'].map(Number);
+    run.solution = [...'934862751751394268682157934349286517517439682826715349175943826493628175268571493'].map(Number);
+    run.givens = run.cells.map(Boolean); run.marks.fill(null);
+    for (const cell of [54, 45, 51]) run.marks[cell] = 'weak';
+    for (const cell of [8, 46, 6]) run.marks[cell] = 'shield';
     for (const cell of [60, 62, 64, 65, 67, 70, 71, 72, 73, 74, 75, 78, 79]) run.cells[cell] = run.solution[cell];
     const report = previewAction(run, 19);
     expect(report.path).toHaveLength(23); expect(report.baseDamage).toBe(10368);
