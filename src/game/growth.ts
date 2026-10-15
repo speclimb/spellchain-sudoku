@@ -7,9 +7,9 @@ export const SKILLS: SkillDefinition[] = [
   { id: 'fuse', name: '星火連環', symbol: '✦', kind: '連鎖', description: '自動入力を増やし、成長すると同じ数字へ飛び火する。' },
   { id: 'scribe', name: '大紋章の詠唱', symbol: '◇', kind: '完成', description: '行・列・区画の完成ダメージを増幅する。' },
   { id: 'lumen', name: '月光解放', symbol: '☾', kind: '攻撃', description: 'この詠唱の通常攻撃ダメージを増幅する。' },
-  { id: 'bridge', name: '連星渡り', symbol: '↝', kind: '連鎖', description: '接続先が途切れたら、自動入力を1回使い、最も近い確定マスへ再接続する。' },
-  { id: 'pierce', name: '貫星弾', symbol: '⌖', kind: '弱点', description: '実際に埋めた弱点マスごとに追加攻撃。Lv.5から弱点3マス以上で追撃する。' },
-  { id: 'bastion', name: '護星砲', symbol: '⬡', kind: '守護', description: '詠唱中の最大シート守護値に応じた追加攻撃。Lv.5から一時守護を得る。' },
+  { id: 'bridge', name: '連星渡り', symbol: '↝', kind: '連鎖', description: '最も近い確定マスへ再接続。その先で3マス以上埋めると強力な追撃。' },
+  { id: 'pierce', name: '貫星弾', symbol: '⌖', kind: '弱点', description: '弱点ごとに追加攻撃。弱点から始め、少ない入力で弱点を集中して突くと強力な追撃。' },
+  { id: 'bastion', name: '護星砲', symbol: '⬡', kind: '守護', description: '守護に応じた追加攻撃。守護を蓄え、守護マスから始めると強力な追撃。' },
 ];
 export const skillOf = (id: SkillId): SkillDefinition => SKILLS.find(skill => skill.id === id)!;
 const level = (value: number | undefined, fallback: number) => Math.min(10, Math.max(1, Math.floor(Number.isFinite(value) ? value! : fallback)));
@@ -30,12 +30,12 @@ export function selectedSkill(run: SkillRun, skill: boolean, requested?: SkillId
 export interface SkillValues {
   level: number; evolution: number; auto: number; fuseHops: number; reconnects: number;
   completionMultiplier: number; damageMultiplier: number; weakAttack: number; weakBurst: number;
-  shieldAttack: number; temporaryShield: number;
+  shieldAttack: number; temporaryShield: number; situationalAttack: number;
 }
 export function skillValues(run: SkillRun, id: SkillId): SkillValues {
   const lv = skillLevel(run, id), index = Math.max(0, lv - 1);
   const result: SkillValues = { level: lv, evolution: lv >= 10 ? 3 : lv >= 5 ? 2 : 1, auto: 0, fuseHops: 0, reconnects: 0,
-    completionMultiplier: 1, damageMultiplier: 1, weakAttack: 0, weakBurst: 0, shieldAttack: 0, temporaryShield: 0 };
+    completionMultiplier: 1, damageMultiplier: 1, weakAttack: 0, weakBurst: 0, shieldAttack: 0, temporaryShield: 0, situationalAttack: 0 };
   if (!lv) return result;
   if (id === 'fuse') { result.auto = [4, 4, 5, 6, 7, 8, 9, 10, 11, 12][index]; result.fuseHops = lv >= 10 ? 3 : lv >= 5 ? 2 : lv >= 2 ? 1 : 0; }
   if (id === 'scribe') result.completionMultiplier = [3, 4, 4.25, 4.5, 5, 5.2, 5.4, 5.6, 5.8, 6.2][index];
@@ -43,6 +43,9 @@ export function skillValues(run: SkillRun, id: SkillId): SkillValues {
   if (id === 'bridge') { result.auto = [0, 1, 2, 3, 3, 4, 5, 6, 7, 8][index]; result.reconnects = lv >= 10 ? 3 : lv >= 5 ? 2 : 1; }
   if (id === 'pierce') { result.weakAttack = [24, 28, 32, 36, 40, 43, 46, 49, 52, 55][index]; result.weakBurst = lv >= 5 ? [60, 68, 76, 84, 92, 100][lv - 5] : 0; }
   if (id === 'bastion') { result.shieldAttack = [1.5, 1.75, 2, 2.2, 2.5, 2.7, 2.9, 3.1, 3.3, 3.6][index]; result.temporaryShield = lv >= 5 ? [6, 7, 8, 9, 10, 14][lv - 5] : 0; }
+  // A bounded, once-per-cast follow-up scales with the actual ordinary attack,
+  // so each additional skill retains its niche as damage relics grow.
+  if (id === 'bridge' || id === 'pierce' || id === 'bastion') result.situationalAttack = [3, 4, 4.3, 4.6, 5, 5.3, 5.6, 5.9, 6.2, 7][index];
   return result;
 }
 export function relicLevel(run: Run, id: RelicId): number {
@@ -113,9 +116,10 @@ export function skillDescriptionFor(run: SkillRun, id: SkillId): string {
   if (id === 'fuse') return `${opening}自動入力＋${value.auto}。${value.fuseHops ? `接続が途切れると残り自動入力を1回使い、直前と同じ数字へ最大${value.fuseHops}回飛び火。` : 'Lv.2で同じ数字への飛び火を習得。'}`;
   if (id === 'scribe') return `${opening}完成ダメージ${numberText(value.completionMultiplier)}倍。`;
   if (id === 'lumen') return `${opening}通常攻撃ダメージ${numberText(value.damageMultiplier)}倍。`;
-  if (id === 'bridge') return `${opening}自動入力＋${value.auto}。接続が途切れた時、残り自動入力を1回使って最も近い確定マスへ最大${value.reconnects}回再接続。同距離は上→左。`;
-  if (id === 'pierce') return `${opening}弱点1マスごとに${value.weakAttack}×術式倍率の追加攻撃。${value.weakBurst ? `弱点3マス以上でさらに${value.weakBurst}×術式倍率を1回追撃。` : 'Lv.5で弱点3マスの追撃を習得。'}追加攻撃に通常・護符倍率やシート完成加算は重ならない。`;
-  return `${opening}詠唱中の最大シート守護×${numberText(value.shieldAttack)}×術式倍率の追加攻撃。${value.temporaryShield ? `この手だけ守護＋${value.temporaryShield}。` : 'Lv.5で一時守護を習得。'}複数シートの守護は合算しない。追加攻撃に通常・護符倍率やシート完成加算は重ならない。`;
+  const followUp = `通常攻撃の${numberText(value.situationalAttack)}倍を1回追撃。追撃に三の護符・シート完成加算は重ならない。`;
+  if (id === 'bridge') return `${opening}自動入力＋${value.auto}。接続が途切れると残り自動入力を1回使い、最も近い確定マスへ最大${value.reconnects}回再接続（同距離は上→左）。最初の再接続先から3マス以上埋めると、${followUp}`;
+  if (id === 'pierce') return `${opening}弱点から始め、弱点2マス以上かつ全入力の4分の1以上が弱点なら、${followUp}別途、弱点1マスごとに${value.weakAttack}×術式倍率の追加攻撃。${value.weakBurst ? `弱点3マス以上でさらに${value.weakBurst}×術式倍率。` : 'Lv.5で弱点3マスの追加攻撃を習得。'}`;
+  return `${opening}詠唱前のシート守護が12以上で、守護マスから始めると、${followUp}別途、詠唱中の最大シート守護×${numberText(value.shieldAttack)}×術式倍率の追加攻撃（複数シートは合算しない）。${value.temporaryShield ? `この手だけ守護＋${value.temporaryShield}（蓄積条件には含めない）。` : 'Lv.5で一時守護を習得。'}`;
 }
 export function skillNextDescription(run: SkillRun, id: SkillId): string {
   const lv = skillLevel(run, id);

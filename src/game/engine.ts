@@ -270,8 +270,22 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   const temporaryShield = values?.temporaryShield ?? 0;
   maxShield += temporaryShield;
   const weakCount = path.filter(event => event.mark === 'weak').length;
-  const extraDamage = Math.floor(((values?.weakAttack ?? 0) * weakCount + (weakCount >= 3 ? values?.weakBurst ?? 0 : 0) + maxShield * (values?.shieldAttack ?? 0)) * spellMultiplier(source.spellLevel));
-  if (metrics.ward && values?.shieldAttack) without.ward = { base: baseDamage, clear: clearBonus, extra: Math.floor((maxShield - wardShield) * values.shieldAttack * spellMultiplier(source.spellLevel)) };
+  const firstBridge = path.findIndex(event => event.bridge);
+  const openingShield = sheetShield(source);
+  const focused = (shield: number) => chosen === 'bridge' ? firstBridge >= 0 && path.length - firstBridge >= 3
+    : chosen === 'pierce' ? path[0].mark === 'weak' && weakCount >= 2 && weakCount * 4 >= path.length
+    : chosen === 'bastion' && path[0].mark === 'shield' && shield >= 12;
+  const extraAttack = (base: number, shield: number, opening: number) => Math.floor(
+    ((values?.weakAttack ?? 0) * weakCount + (weakCount >= 3 ? values?.weakBurst ?? 0 : 0) + shield * (values?.shieldAttack ?? 0)) * spellMultiplier(source.spellLevel)
+    + (focused(opening) ? base * (values?.situationalAttack ?? 0) : 0));
+  const extraDamage = extraAttack(baseDamage, maxShield, openingShield);
+  // Attribution removes a relic from this same path. Its contribution includes
+  // the follow-up fed by its ordinary damage, or Ward's opening guard condition.
+  for (const lower of Object.values(without)) if (lower) lower.extra = extraAttack(lower.base, maxShield, openingShield);
+  if (metrics.ward && values?.shieldAttack) {
+    const openingWard = UNITS.filter(unit => unit.some(target => !source.givens[target]) && unit.every(target => source.cells[target])).length * relicValues(source, 'ward').ward;
+    without.ward = { base: baseDamage, clear: clearBonus, extra: extraAttack(baseDamage, maxShield - wardShield, openingShield - openingWard) };
+  }
   if (metrics.battery && !skill) { metrics.battery.opportunities++; metrics.battery.triggers++; metrics.battery.mana += Math.max(0, run.mana + run.manaOverflow - Math.min(8, oldMana + (run.relicBalanceVersion ? Math.min(5, path.length) : path.length) + (run.character === 'lumen' ? 1 : 0)) - stored); }
   if (metrics.quint && freeSkill) metrics.quint.tokensUsed++;
   if (metrics.amplifier && skill) { metrics.amplifier.opportunities++; metrics.amplifier.triggers++; }
