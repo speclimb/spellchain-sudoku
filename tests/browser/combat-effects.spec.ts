@@ -1,4 +1,4 @@
-import { savedText, resetHistoryDatabase } from './save-helpers';
+import { savedText, savedGame, resetHistoryDatabase } from './save-helpers';
 import { expect, test, type Page } from '@playwright/test';
 import type { Report, Run, Save } from '../../src/game/types';
 
@@ -69,6 +69,51 @@ async function finished(page: Page): Promise<void> {
   await expect(page.locator('[data-action="cast"]')).not.toHaveText('詠唱中…');
   await expect(page.locator('.combat-effects[data-phase]')).toHaveCount(0);
 }
+
+test('gold completion heals the HUD before a fatal counter and preserves the surviving HP and history', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  const { cell, report, before } = await page.evaluate(async key => {
+    const engine = '/src/game/engine.ts', sudoku = '/src/game/sudoku.ts', enemies = '/src/game/enemies.ts';
+    const { newSave, startRun, previewAction } = await import(/* @vite-ignore */ engine);
+    const { PEERS } = await import(/* @vite-ignore */ sudoku);
+    const { enemyForRun } = await import(/* @vite-ignore */ enemies);
+    const initial = newSave(); initial.meta.clears = 99; initial.meta.tutorialDone = true; initial.settings.sound = false;
+    const save = startRun(initial, 'fuse', 73), run = save.run;
+    run.inventory = ['gold']; run.relicLevels.gold = 10; run.tier.gold = 3; run.acquisitionRank.gold = 1;
+    run.stage = 18; run.stats.kills = 18; run.enemyRulesVersion = 0; run.enemyHp = enemyForRun(run).hp; run.hp = 1;
+    save.history.runs[0].battles = [];
+    const blanks = run.givens.flatMap((given: boolean, cell: number) => !given && run.marks[cell] === null ? [cell] : []);
+    const cell = blanks[0], spare = blanks.find((other: number) => other !== cell && !PEERS[cell].includes(other));
+    if (spare === undefined) throw new Error('Gold fixture needs an unconnected remaining blank');
+    run.cells = [...run.solution]; run.cells[cell] = 0; run.cells[spare] = 0;
+    const report = previewAction(run, cell);
+    localStorage.setItem(key, JSON.stringify(save));
+    return { cell, report, before: run };
+  }, key);
+  expect(report.relicHealed).toBe(7); expect(report.received).toBe(4); expect(report.healed).toBe(7);
+  expect(before.hp).toBeLessThanOrEqual(report.received);
+  expect(before.hp + report.relicHealed! - report.received).toBe(4);
+  await page.reload(); await page.getByRole('button', { name: /冒険の続きへ/ }).click();
+  await page.locator(`[data-cell="${cell}"]`).click();
+  await expect(page.locator('.prediction-outcome')).toContainText('反撃前回復 ＋7');
+  await page.locator('[data-action="cast"]').click();
+  await phase(page, 'strike');
+  await expect(page.locator('.vital-health strong')).toHaveText(`8 / ${before.maxHp}`);
+  await phase(page, 'counter');
+  await expect(page.locator('.vital-health strong')).toHaveText(`4 / ${before.maxHp}`);
+  expect(await page.locator('.health-track.player i').evaluate(node => (node as HTMLElement).style.width)).toBe(`${4 / before.maxHp * 100}%`);
+  await page.screenshot({ path: '.runtime/screenshots/mobile-gold-healing-counter.png', fullPage: false });
+  await finished(page);
+  await expect(page.locator('.feedback')).toContainText('反撃前にHPを7回復');
+  const committed = await savedGame(page), cast = committed.history!.runs.at(-1)!.battles.at(-1)!.casts[0];
+  expect(committed.run!.phase).toBe('battle'); expect(committed.run!.hp).toBe(4);
+  expect(cast).toMatchObject({ hpBefore: 1, relicHealed: 7, hpLost: 4, healed: 7, hpAfter: 4 });
+  expect(cast.relics.gold!.metric.healed).toBe(7);
+  await page.reload(); await page.getByRole('button', { name: /冒険の続きへ/ }).click();
+  await expect(page.locator('.vital-health strong')).toHaveText(`4 / ${before.maxHp}`);
+  expect(await savedGame(page)).toEqual(committed);
+});
 
 test('chain, score strike and damaging counter are distinct visible phases with exact committed numbers', async ({ page }) => {
   const errors: string[] = [];

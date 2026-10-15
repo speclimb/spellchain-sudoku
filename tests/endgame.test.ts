@@ -14,6 +14,7 @@ function fixture(seed = 71, character: CharacterId = 'fuse'): Run {
 
 /** Reconstruct the pre-expansion rules explicitly for compatibility assertions. */
 function legacyRun(run: Run): Run {
+  delete run.relicBalanceVersion; delete run.stowedRelics;
   delete run.expansionVersion; delete run.enemyRulesVersion; delete run.skillLevels;
   delete run.equippedSkills; delete run.relicLevels; delete run.rewardStep;
   delete run.pendingRelicRewards; delete run.contributions;
@@ -178,17 +179,17 @@ describe('free skill tokens and reserved automatic entries', () => {
 
 describe('unbounded upper Wick casts and segmented accounting', () => {
   it('does not continue with zero fuel, while one remaining auto pays for exactly the next sheet entry', () => {
-    const run = boardWith([0, 1, 2, 3, 4, 5, 6]); run.inventory = ['wick']; run.tier.wick = 2;
-    expect(chainCapacity(run)).toBe(6);
+    const run = boardWith([0, 1, 2, 3, 4, 5]); run.inventory = ['wick']; run.tier.wick = 2;
+    expect(chainCapacity(run)).toBe(5);
     const exact = resolveAction(run, play(run, 0));
-    expect(exact.lastReport!.path).toHaveLength(7); expect(exact.lastReport!.segments).toHaveLength(1);
+    expect(exact.lastReport!.path).toHaveLength(6); expect(exact.lastReport!.segments).toHaveLength(1);
     expect(exact.lastReport!.chain).toMatchObject({ remainingAuto: 0, stopReason: 'board-complete' });
     expect(exact.sheet).toBe(2); expect(exact.cells.filter(v => !v)).toHaveLength(36);
-    run.cells[6] = run.solution[6]; run.givens[6] = true;
+    run.cells[5] = run.solution[5]; run.givens[5] = true;
     const carried = resolveAction(run, play(run, 0)), report = carried.lastReport!;
-    expect(report.path).toHaveLength(7); expect(report.segments).toHaveLength(2);
-    expect(report.path[6]).toMatchObject({ source: 'chain', sheetStart: true, ordinal: 7, sheet: 2 });
-    expect(report.chain!.steps[6]).toMatchObject({ from: null, remainingBefore: 1, remainingAfter: 0, sheetStart: true });
+    expect(report.path).toHaveLength(6); expect(report.segments).toHaveLength(2);
+    expect(report.path[5]).toMatchObject({ source: 'chain', sheetStart: true, ordinal: 6, sheet: 2 });
+    expect(report.chain!.steps[5]).toMatchObject({ from: null, remainingBefore: 1, remainingAfter: 0, sheetStart: true });
     expect(carried.cells.filter(v => !v)).toHaveLength(35); expect(carried.sheet).toBe(2);
   });
   it('chooses the longest deterministic within-sheet path and upper-left among equal fresh entries', () => {
@@ -223,12 +224,12 @@ describe('unbounded upper Wick casts and segmented accounting', () => {
     expect(next.stats.bestChain).toBe(report.path.length); expect(next.stats.skills).toBe(1);
     expect(next.stats.sheets).toBe(report.sheetsCompleted); expect(next.spellLevel).toBe(run.spellLevel + report.sheetsCompleted!);
     expect(report.chain!.initialAuto).toBe(chainCapacity(run, true));
-    expect(report.chain!.remainingAuto).toBe(chainCapacity(run, true) + 3 - report.path.filter(event => event.source === 'chain').length);
+    expect(report.chain!.remainingAuto).toBe(chainCapacity(run, true) + 2 - report.path.filter(event => event.source === 'chain').length);
     expect(report.spellLevelBefore).toBe(run.spellLevel);
     let raw = 0;
     for (const part of report.segments!) {
       const segmentPath = report.path.slice(part.pathStart, part.pathEnd);
-      raw = segmentPath.reduce((sum, event) => sum + (Math.min(80, 10 + (event.ordinal - 1) * 2) + event.units.length * 40 + (event.mark === 'weak' ? 32 : 0)) * (event.ordinal <= 5 ? 2 : 1), 0);
+      raw = segmentPath.reduce((sum, event) => sum + (Math.min(80, 10 + (event.ordinal - 1) * 2) + event.units.length * 40 + (event.mark === 'weak' ? 20 + (event.source === 'root' ? 12 : 0) : 0)) * (event.ordinal <= 5 ? 2 : 1), 0);
       expect(part.baseDamage).toBe(Math.floor(raw * spellMultiplier(run.spellLevel)));
       expect(part.clearBonus).toBe(part.fullClear ? Math.floor(part.baseDamage * segmentPath.length / (4 * part.givens.filter(v => !v).length)) : 0);
     }

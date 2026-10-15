@@ -1,4 +1,4 @@
-import { REPEATABLE_REWARDS, characterOf, greaterIds, primeIds } from './content';
+import { REPEATABLE_REWARDS, characterOf, greaterIds, primeIds, relicOf } from './content';
 import type { Random } from './sudoku';
 import type { GreaterRelicId, RelicId, RewardId, Run, SkillId } from './types';
 import { MAX_EQUIPPED_SKILLS, SKILLS, relicLevel, relicTierLevel, skillLevel } from './growth';
@@ -42,6 +42,7 @@ function rollLegacyRewards(run: Run, random: Random): RewardId[] {
 
 const isBoss = (run: Run) => run.balanceVersion === 2 && (run.stage + 1) % 5 === 0;
 const basicRepeatables: RewardId[] = ['training', 'vitality', 'recovery'];
+const SUPPORT_REWARD_CHANCE = 0.25;
 function isRelicId(run: Run, value: string): value is RelicId { return run.pool.includes(value as RelicId); }
 const isEvolution = (id: RewardId) => id.startsWith('greater:') || id.startsWith('apex:');
 const relicIdOf = (id: RewardId) => (id.startsWith('greater:') ? id.slice(8) : id.startsWith('apex:') ? id.slice(5) : id) as RelicId;
@@ -132,12 +133,29 @@ export function rollRelicRewards(run: Run, random: Random): RewardId[] {
   const available = random.shuffle(candidates);
   const missingCandidates = available.filter(id => isRelicId(run, id) && !run.inventory.includes(id));
   const affinityIds = characterOf(run.character).affinity;
-  const missing = missingCandidates.find(id => id === wickOffer) ?? missingCandidates.find(id => affinityIds.includes(id as RelicId)) ?? missingCandidates[0];
+  const balanced = run.relicBalanceVersion === 1;
+  const missing = missingCandidates.find(id => id === wickOffer) ?? (balanced ? missingCandidates[0] : missingCandidates.find(id => affinityIds.includes(id as RelicId)) ?? missingCandidates[0]);
   const upgradeCandidates = available.filter(id => run.inventory.includes(relicIdOf(id)));
   const upgrade = upgradeCandidates.find(id => id === wickOffer) ?? (boss
-    ? weightedChoice(upgradeCandidates, id => (isEvolution(id) ? 2 : 1) * (affinityIds.includes(relicIdOf(id)) ? 1.35 : 1), random)
-    : upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0]);
+    ? weightedChoice(upgradeCandidates, id => (isEvolution(id) ? 2 : 1) * (!balanced && affinityIds.includes(relicIdOf(id)) ? 1.35 : 1), random)
+    : balanced ? upgradeCandidates.find(id => !missing || relicOf(relicIdOf(id)).kind !== relicOf(relicIdOf(missing)).kind) ?? upgradeCandidates[0]
+      : upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0]);
   const chosen = [missing, upgrade].filter((id): id is RewardId => id !== undefined);
+  if (balanced) {
+    // Usually offer three relics; occasionally reserve one slot for support.
+    // If relics run short, support still fills the menu to three choices.
+    const relicSlots = candidates.length >= 3 && random.next() < SUPPORT_REWARD_CHANCE ? 2 : 3;
+    while (chosen.length < relicSlots) {
+      const remaining = available.filter(id => !chosen.includes(id));
+      const distinct = remaining.filter(id => chosen.every(other => relicOf(relicIdOf(other)).kind !== relicOf(relicIdOf(id)).kind));
+      const next = weightedChoice(distinct.length ? distinct : remaining, id => boss && isEvolution(id) ? 2 : 1, random);
+      if (!next) break;
+      chosen.push(next);
+    }
+    const repeats: RewardId[] = boss ? [...basicRepeatables, 'magic-boon', 'defense-boon'] : basicRepeatables;
+    chosen.push(...random.shuffle(repeats).slice(0, 3 - chosen.length));
+    return random.shuffle(chosen);
+  }
   const remaining = available.filter(id => !chosen.includes(id));
   while (chosen.length < 3 && remaining.length) {
     // The flexible slot modestly favors owned growth in ordinary battles;
@@ -170,10 +188,12 @@ export function applyGrowthReward(run: Run, id: RewardId): boolean {
   const greater = id.startsWith('greater:'), apex = id.startsWith('apex:');
   const relic = (greater ? id.slice(8) : apex ? id.slice(5) : id) as RelicId;
   if (!isRelicId(run, relic)) return false;
-  const before = relicLevel(run, relic), oldTier = relicTierLevel(run, relic);
+  const before = relicLevel(run, relic), archived = !before ? run.stowedRelics?.[relic] : undefined;
+  const oldTier = archived?.tier ?? relicTierLevel(run, relic);
   if (!before) {
-    run.inventory.push(relic); run.acquisitionRank[relic] = 1;
-    run.relicLevels = { ...run.relicLevels, [relic]: 1 };
+    run.inventory.push(relic); run.acquisitionRank[relic] = archived?.rank ?? 1;
+    run.relicLevels = { ...run.relicLevels, [relic]: archived?.level ?? 1 };
+    if (archived) { run.tier[relic] = archived.tier; delete run.stowedRelics![relic]; }
     if (relic === 'glass') { run.maxHp -= 8; run.hp = Math.min(run.hp, run.maxHp); }
   } else if (!greater && !apex) {
     // Legacy prime rewards are acquisition upgrades only; do not reinterpret a
@@ -181,7 +201,7 @@ export function applyGrowthReward(run: Run, id: RewardId): boolean {
     run.relicLevels = { ...run.relicLevels, [relic]: run.rewardStep === 'legacy' ? before : Math.min(10, before + 1) };
     if (primeIds.includes(relic)) run.acquisitionRank[relic] = Math.min(3, (run.acquisitionRank[relic] ?? 1) + 1);
   }
-  if (greater) run.tier[relic] = 2;
+  if (greater) run.tier[relic] = Math.max(2, oldTier);
   if (apex) run.tier[relic] = Math.min(3, oldTier + 1);
   return true;
 }

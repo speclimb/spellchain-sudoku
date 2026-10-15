@@ -1,4 +1,4 @@
-import { rewardOf } from './content';
+import { relicOf, rewardOf } from './content';
 import { enemyForRun } from './enemies';
 import { relicLevel, relicTierLevel } from './growth';
 import type { Action, BattleLedger, CharacterId, EffectMetric, Phase, PrimeProcOutcome, RelicId, RewardId, Run, Save, SkillId } from './types';
@@ -10,7 +10,7 @@ export interface HistoryCast {
   id: number; turn: number; skillId?: SkillId; skillLevel?: number; spellLevel: number;
   chain: number; sheetFrom: number; sheetTo: number; sheetsCompleted: number;
   damage: number; hpDamage: number; overkill: number; received: number; hpLost: number;
-  incoming: number; shield: number; healed: number; hpBefore: number; hpAfter: number;
+  incoming: number; shield: number; healed: number; relicHealed?: number; hpBefore: number; hpAfter: number;
   enemyBefore: number; enemyAfter: number; freeSkill: boolean; score: number;
   procs: PrimeProcOutcome[]; relics: Partial<Record<RelicId, HistoryEffect>>;
   fuelBefore: number; fuelAfter: number; tokensBefore: number; tokensAfter: number;
@@ -80,7 +80,8 @@ export function recordHistory(save: Save, before: Run, action: Action): void {
   if (action.type === 'reward') {
     if (!battle.rewards.some(r => r.revision === after.revision)) {
       const reward = rewardOf(action.relic, before);
-      battle.rewards.push({ revision: after.revision, id: action.relic, name: reward.name, description: reward.description, step: before.rewardStep ?? 'legacy' });
+      const exchange = action.replace ? ` ${relicOf(action.replace).name}（Lv.${relicLevel(before, action.replace)}・${['通常', '上位', '極位'][relicTierLevel(before, action.replace) - 1]}）と交換。外した遺物の育成は再取得まで保存。` : '';
+      battle.rewards.push({ revision: after.revision, id: action.relic, name: reward.name, description: reward.description + exchange, step: before.rewardStep ?? 'legacy' });
     }
     battle.status = 'victory';
     if (after.stage !== before.stage) battleFor(item, after);
@@ -95,8 +96,8 @@ export function recordHistory(save: Save, before: Run, action: Action): void {
     const cast: HistoryCast = { id: after.castCounter, turn: after.turn, skillId: report.skillId, skillLevel: report.skillLevel, spellLevel: before.spellLevel,
       chain: report.path.length, sheetFrom: report.path[0].sheet ?? before.sheet, sheetTo: report.path.at(-1)?.sheet ?? before.sheet,
       sheetsCompleted: report.sheetsCompleted ?? Number(report.fullClear), damage: report.damage, hpDamage, overkill,
-      received: report.received, hpLost: Math.min(report.hpBefore, report.received), incoming: report.incoming, shield: report.shield,
-      healed: report.healed, hpBefore: report.hpBefore, hpAfter: after.hp, enemyBefore: report.enemyBefore, enemyAfter: after.enemyHp,
+      received: report.received, hpLost: Math.min(report.hpBefore + (report.relicHealed ?? 0), report.received), incoming: report.incoming, shield: report.shield,
+      healed: report.healed, relicHealed: report.relicHealed, hpBefore: report.hpBefore, hpAfter: after.hp, enemyBefore: report.enemyBefore, enemyAfter: after.enemyHp,
       freeSkill: !!report.freeSkill, score: report.attackScore + (report.defeated ? 500 : 0), procs: structuredClone(report.procs ?? []), relics,
       fuelBefore: before.reservedAuto, fuelAfter: after.reservedAuto, tokensBefore: before.freeSkillTokens, tokensAfter: after.freeSkillTokens,
       manaBefore: before.mana, manaAfter: after.mana, charged: report.charge, overflowBefore: before.manaOverflow, overflowAfter: after.manaOverflow, overflowRestored: report.manaRestored ?? 0, stopReason: report.chain?.stopReason };
@@ -110,7 +111,7 @@ export function recordHistory(save: Save, before: Run, action: Action): void {
     }
     for (const [id, value] of Object.entries(report.ledger?.relics ?? {}) as [RelicId, EffectMetric][]) {
       const metric = total.relics[id] ??= Object.fromEntries(Object.keys(value).map(k => [k, 0])) as unknown as EffectMetric;
-      for (const key of Object.keys(value) as (keyof EffectMetric)[]) metric[key] += value[key];
+      for (const key of Object.keys(value) as (keyof EffectMetric)[]) metric[key] = (metric[key] ?? 0) + (value[key] ?? 0);
     }
   }
   boundHistory(save.history!, Infinity);

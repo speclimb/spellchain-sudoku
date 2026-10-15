@@ -14,6 +14,7 @@ function fixture(seed = 71): Save {
 
 /** Reconstruct the pre-expansion rules explicitly for compatibility assertions. */
 function legacyRun(run: Run): Run {
+  delete run.relicBalanceVersion; delete run.stowedRelics;
   delete run.expansionVersion; delete run.enemyRulesVersion; delete run.skillLevels;
   delete run.equippedSkills; delete run.relicLevels; delete run.rewardStep;
   delete run.pendingRelicRewards; delete run.contributions;

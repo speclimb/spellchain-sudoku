@@ -67,13 +67,14 @@ describe('cross-sheet relic offer guarantees', () => {
     }
   });
 
-  it('keeps first and second battle rolls unchanged', () => {
+  it('keeps versionless first and second battle rolls unchanged', () => {
     const expected: Record<CharacterId, RewardId[]> = {
       fuse: ['glass', 'echo', 'sept'], scribe: ['glass', 'pen', 'sept'], lumen: ['glass', 'battery', 'sept'],
     };
     for (const character of characters) for (const stage of [0, 1]) {
       const random = new Random(73);
-      expect(rollRewards(fixture(character, stage).run!, random)).toEqual(expected[character]);
+      const run = fixture(character, stage).run!; delete run.relicBalanceVersion;
+      expect(rollRewards(run, random)).toEqual(expected[character]);
       expect(random.state).toBe(775954742);
     }
   });
@@ -110,7 +111,7 @@ describe('cross-sheet relic offer guarantees', () => {
     for (let seed = 0; seed < 20; seed++) {
       const offers = rollRelicRewards(run, new Random(seed));
       expectValidOffers(run, offers); expect(offers).toContain('greater:wick');
-      expect(offers.filter(id => ['training', 'vitality', 'recovery'].includes(id))).toHaveLength(2);
+      expect(offers.filter(id => ['training', 'vitality', 'recovery', 'magic-boon', 'defense-boon'].includes(id))).toHaveLength(2);
     }
   });
 
@@ -131,8 +132,9 @@ describe('cross-sheet relic offer guarantees', () => {
     }
   });
 
-  it('keeps the skill roll separate and consumes the same deterministic reward RNG draws', () => {
+  it('keeps versionless skill rolls separate and preserves their original reward RNG draws', () => {
     const run = fixture('lumen').run!; own(run, 'wick'); run.rewardStep = 'skill';
+    delete run.relicBalanceVersion;
     const before = structuredClone(run);
     for (let seed = 0; seed < 100; seed++) {
       const skills = rollRewards(run, new Random(seed));

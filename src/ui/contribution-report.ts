@@ -4,7 +4,7 @@ import type { BattleLedger, EffectMetric, RelicId, Run, SkillId, SkillMetric } f
 
 const fmt = (n: number): string => n.toLocaleString('ja-JP');
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const emptyEffect = (): EffectMetric => ({ heldCasts: 0, opportunities: 0, triggers: 0, damage: 0, addedInputs: 0, fuelGranted: 0, fuelUsed: 0, mana: 0, prevented: 0, tokensGranted: 0, tokensUsed: 0, score: 0 });
+const emptyEffect = (): EffectMetric => ({ heldCasts: 0, opportunities: 0, triggers: 0, damage: 0, addedInputs: 0, fuelGranted: 0, fuelUsed: 0, mana: 0, prevented: 0, tokensGranted: 0, tokensUsed: 0, score: 0, healed: 0 });
 
 /** Aggregate only the recorded observation window, without estimating missing casts. */
 export function contributionSummary(run: Run, bossOnly = false): BattleLedger & { battles: number } {
@@ -19,7 +19,7 @@ export function contributionSummary(run: Run, bossOnly = false): BattleLedger & 
     }
     for (const [id, value] of Object.entries(battle.relics) as [RelicId, EffectMetric][]) {
       const entry = total.relics[id] ??= emptyEffect();
-      for (const key of Object.keys(entry) as (keyof EffectMetric)[]) entry[key] += value[key] ?? 0;
+      for (const key of Object.keys(entry) as (keyof EffectMetric)[]) entry[key] = (entry[key] ?? 0) + (value[key] ?? 0);
     }
   }
   return total;
@@ -33,6 +33,7 @@ export function effectRows(metric: EffectMetric): { label: string; value: string
   }
   if (metric.addedInputs) rows.push({ label: '無料で直接入力したマス', value: `${fmt(metric.addedInputs)}マス` });
   if (metric.mana) rows.push({ label: '追加の魔力', value: `＋${fmt(metric.mana)}` });
+  if (metric.healed) rows.push({ label: '反撃前に回復したHP', value: `＋${fmt(metric.healed)}` });
   if (metric.prevented) rows.push({ label: '防いだHPダメージ', value: fmt(metric.prevented) });
   if (metric.tokensGranted || metric.tokensUsed) rows.push({ label: '無料券の獲得 / 使用', value: `${fmt(metric.tokensGranted)} / ${fmt(metric.tokensUsed)}回` });
   if (metric.score) rows.push({ label: '追加スコア', value: `＋${fmt(metric.score)}` });
@@ -44,6 +45,7 @@ function activity(metric: EffectMetric): { priority: number; amount: number; tex
   if (metric.damage) return { priority: 6, amount: metric.damage, text: `発揮ダメージ差 ＋${fmt(metric.damage)}` };
   if (metric.addedInputs || metric.fuelUsed) return { priority: 5, amount: metric.addedInputs || metric.fuelUsed, text: metric.addedInputs ? `無料で${fmt(metric.addedInputs)}マス直接入力` : `自動入力を${fmt(metric.fuelUsed)}回使用` };
   if (metric.prevented) return { priority: 4, amount: metric.prevented, text: `HPダメージを${fmt(metric.prevented)}防御` };
+  if (metric.healed) return { priority: 4, amount: metric.healed, text: `反撃前にHPを${fmt(metric.healed)}回復` };
   if (metric.tokensUsed || metric.tokensGranted) return { priority: 3, amount: metric.tokensUsed || metric.tokensGranted, text: `無料券 ${fmt(metric.tokensGranted)}回獲得 / ${fmt(metric.tokensUsed)}回使用` };
   if (metric.mana) return { priority: 2, amount: metric.mana, text: `追加の魔力 ＋${fmt(metric.mana)}` };
   if (metric.score) return { priority: 1, amount: metric.score, text: `追加スコア ＋${fmt(metric.score)}` };
@@ -76,8 +78,9 @@ export function contributionReport(run: Run, bossOnly = false): string {
       }).join('')}</div>
       <h4>遺物の実績</h4><p class="report-explainer">自動入力は付与順で使用を記録。経路全体をその遺物の成果とは数えません。付与・使用回数と無料の直接入力は別の指標です。発動率は機会の数とあわせて見てください。</p>
       <div class="contribution-items">${relicIds.map(id => {
-        const item = relicOf(id), metric = total.relics[id], rows = metric ? effectRows(metric) : [];
-        return `<article class="contribution-item" data-relic-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>Lv.${relicLevel(run, id)} · ${esc(relicTierLabel(run, id))}</small></h5></div><p class="effect-opportunities">所持中 ${metric?.heldCasts ?? 0}詠唱 · 機会 ${metric?.opportunities ?? 0}回 · 発動 ${metric?.triggers ?? 0}回${(metric?.opportunities ?? 0) < 10 ? ' · 少数サンプル' : ''}</p>${rows.length ? metricList(rows) : `<p class="report-no-opportunity">${!metric?.heldCasts ? 'この期間の所持中データはありません。' : !metric.opportunities ? '発動機会なし。効果が弱いという意味ではありません。' : '発動機会はありましたが、数値効果は記録されませんでした。'}</p>`}<p class="report-next"><b>次の成長</b>${esc(relicNextDescription(run, id))}</p></article>`;
+        const item = relicOf(id), metric = total.relics[id], rows = metric ? effectRows(metric) : [], held = run.inventory.includes(id), stowed = run.stowedRelics?.[id];
+        const rank = held ? `Lv.${relicLevel(run, id)} · ${relicTierLabel(run, id)}` : stowed ? `保管中 · Lv.${stowed.level} · ${['通常', '上位', '極位'][stowed.tier - 1]}` : '手放した遺物';
+        return `<article class="contribution-item" data-relic-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>${esc(rank)}</small></h5></div><p class="effect-opportunities">所持中 ${metric?.heldCasts ?? 0}詠唱 · 機会 ${metric?.opportunities ?? 0}回 · 発動 ${metric?.triggers ?? 0}回${(metric?.opportunities ?? 0) < 10 ? ' · 少数サンプル' : ''}</p>${rows.length ? metricList(rows) : `<p class="report-no-opportunity">${!metric?.heldCasts ? 'この期間の所持中データはありません。' : !metric.opportunities ? '発動機会なし。効果が弱いという意味ではありません。' : '発動機会はありましたが、数値効果は記録されませんでした。'}</p>`}${held ? `<p class="report-next"><b>次の成長</b>${esc(relicNextDescription(run, id))}</p>` : `<p class="report-next">${stowed ? '報酬で再取得すると、保存したレベル・段階へ戻ります。' : '現在は所持していません。この期間に発揮した効果を表示しています。'}</p>`}</article>`;
       }).join('') || '<p class="report-empty">遺物を手に入れると、ここに記録されます。</p>'}</div>
       <p class="report-explainer">総ダメージ ${fmt(total.damage)} = 敵HP ${fmt(total.hpDamage)} + 超過 ${fmt(total.overkill)}。スコアは別集計です。記録開始は通算${fmt((history?.sinceCast ?? run.castCounter) + 1)}詠唱目から。</p>
     </details>

@@ -132,7 +132,7 @@ test('level thirty, two separated final cells: accumulated ward protects a one-l
   expect(report.chain!.stopReason).toBe('no-target');
   expect(report.fullClear).toBe(false);
   expect(report.incoming).toBe(42);
-  expect(report.shield).toBe(defense + 9);
+  expect(report.shield).toBe(defense + 6);
   expect(report.received).toBe(0);
   await expect(page.locator('.sheet-ward b')).toHaveText(String(defense));
   const snapshot = await saved(page);
@@ -161,7 +161,7 @@ test('level thirty, two separated final cells: accumulated ward protects a one-l
   expect(lastReport.fullClear).toBe(true);
   expect(lastReport.defeated).toBe(false);
   expect(lastReport.incoming).toBeGreaterThan(0);
-  expect(lastReport.shield).toBe(report.shield + 9);
+  expect(lastReport.shield).toBe(report.shield + 6);
   await page.locator(`[data-cell="${nextCell}"]`).click();
   await page.locator('[data-action="cast"]').click();
   await phase(page, 'counter');
@@ -232,7 +232,7 @@ test('level forty fills all thirty-six original blanks in one legal cast, counte
       run.inventory = ['ward'];
       for (const cell of singles(run.cells)) {
         const report = previewAction(run, cell);
-        if (report.path.length !== 36 || !report.fullClear || report.defeated || !report.sheetAdvanced || report.shield !== 99) continue;
+        if (report.path.length !== 36 || !report.fullClear || report.defeated || !report.sheetAdvanced || report.shield !== 72) continue;
         localStorage.setItem(key, JSON.stringify(save));
         return { cell, report, before: run, defense: sheetShield(run) };
       }
@@ -242,11 +242,11 @@ test('level forty fills all thirty-six original blanks in one legal cast, counte
   expect(fixture.before.cells.filter((value: number) => !value)).toHaveLength(36);
   expect(fixture.defense).toBe(0);
   expect(fixture.report.incoming).toBe(126);
-  expect(fixture.report.received).toBe(27);
+  expect(fixture.report.received).toBe(54);
   await resumed(page);
   await page.locator(`[data-cell="${fixture.cell}"]`).click();
   await expect(page.locator('#prediction-chain')).toHaveText('36');
-  await expect(page.locator('.prediction-detail')).toContainText('守護 0→99');
+  await expect(page.locator('.prediction-detail')).toContainText('守護 0→72');
   const started = Date.now();
   await page.locator('[data-action="cast"]').click();
   // Check the chain while it is running. The final fill immediately starts the
@@ -255,8 +255,8 @@ test('level forty fills all thirty-six original blanks in one legal cast, counte
   await expect.poll(() => page.evaluate(() => document.querySelector('.combat-chain strong')?.textContent), { intervals: [20] }).toBe('36');
   await page.screenshot({ path: '.runtime/screenshots/desktop-thirtysix-chain.png', fullPage: false });
   await phase(page, 'counter');
-  await expect(page.locator('.combat-number')).toHaveText('−27');
-  await expect(page.locator('.sheet-ward b')).toHaveText('99');
+  await expect(page.locator('.combat-number')).toHaveText('−54');
+  await expect(page.locator('.sheet-ward b')).toHaveText('72');
   await finished(page);
   const elapsed = Date.now() - started;
   expect(elapsed).toBeLessThan(5000);
@@ -264,7 +264,7 @@ test('level forty fills all thirty-six original blanks in one legal cast, counte
   expect(after.lastReport).toEqual(fixture.report);
   expect(after.stage).toBe(fixture.before.stage);
   expect(after.enemyHp).toBe(fixture.before.enemyHp - fixture.report.damage);
-  expect(after.hp).toBe(fixture.before.hp - 27 + fixture.report.healed);
+  expect(after.hp).toBe(fixture.before.hp - 54 + fixture.report.healed);
   expect(after.sheet).toBe(fixture.before.sheet + 1);
   expect(after.stats.filled).toBe(36);
   expect(after.stats.bestChain).toBe(36);

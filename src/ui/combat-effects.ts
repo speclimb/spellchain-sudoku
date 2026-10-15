@@ -144,9 +144,16 @@ export class CombatEffects {
     }
     if (this.skipped) return;
     this.position('enemy');
-    const detail = [report.procs?.length ? report.procs.map(proc => `${({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[proc.id]} ${proc.triggered ? '発動' : '不発'}`).join(' · ') : report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : '', report.armorBroken ? '鏡甲を解除！' : report.armorPrevented ? `鏡甲が ${fmt(report.armorPrevented)} 軽減` : ''].filter(Boolean).join(' · ');
+    const detail = [report.procs?.length ? report.procs.map(proc => `${({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[proc.id]} ${proc.triggered ? '発動' : '不発'}`).join(' · ') : report.proc ? `三の護符 ${report.proc.triggered ? `発動 ×${report.proc.multiplier}` : '不発'}` : '', report.clearBonus ? `完成加算 ＋${fmt(report.clearBonus)}` : '', report.relicHealed ? `反撃前回復 ＋${report.relicHealed}` : '', report.armorBroken ? '鏡甲を解除！' : report.armorPrevented ? `鏡甲が ${fmt(report.armorPrevented)} 軽減` : ''].filter(Boolean).join(' · ');
     this.phase('strike', report.defeated ? '撃破！' : report.proc?.triggered ? '三の護符 発動！' : report.skill ? '奥義炸裂！' : '連鎖炸裂！', fmt(report.damage), detail);
     this.text('.combat-score', `SCORE +${fmt(report.attackScore)}`);
+    const health = document.querySelector<HTMLElement>('.vital-health strong');
+    const healthBar = document.querySelector<HTMLElement>('.health-track.player i');
+    const beforeCounterHp = before.hp + (report.relicHealed ?? 0);
+    if (report.relicHealed) {
+      if (health) health.firstChild!.textContent = String(beforeCounterHp);
+      if (healthBar) healthBar.style.width = `${beforeCounterHp / before.maxHp * 100}%`;
+    }
     const enemyHp = Math.max(0, before.enemyHp - report.damage);
     const enemyTrack = document.querySelector<HTMLElement>('.enemy-health .health-track i');
     const enemyLabel = document.querySelector<HTMLElement>('.enemy-health > span');
@@ -173,13 +180,12 @@ export class CombatEffects {
       this.host.insertAdjacentHTML('afterbegin', enemyAttackArt(enemy.attackStyle));
       this.host.dataset.blocked = String(blocked);
       this.host.dataset.heavy = String(strongAttack);
-      this.phase(charging ? 'charge' : 'counter', charging ? '霜牙の狼は力を溜める' : blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', charging || blocked ? '0' : `−${report.received}`, charging ? `次の手は ${fmt(intent.nextIncoming)} の突進` : `${enemy.attackName}${prevented ? ` · 守護で ${prevented} 軽減` : ''}`);
+      const healingDetail = report.relicHealed ? ` · 反撃前回復 ＋${report.relicHealed}` : '';
+      this.phase(charging ? 'charge' : 'counter', charging ? '霜牙の狼は力を溜める' : blocked ? '完全防御' : strongAttack ? '強攻撃！' : '敵の反撃！', charging || blocked ? '0' : `−${report.received}`, charging ? `次の手は ${fmt(intent.nextIncoming)} の突進${healingDetail}` : `${enemy.attackName}${prevented ? ` · 守護で ${prevented} 軽減` : ''}${healingDetail}`);
       this.text('.combat-score', '');
       if (!charging) document.querySelector('.app-shell')?.classList.add(blocked ? 'player-blocked' : 'player-struck');
-      const health = document.querySelector<HTMLElement>('.vital-health strong');
-      const healthBar = document.querySelector<HTMLElement>('.health-track.player i');
-      if (health) health.firstChild!.textContent = String(Math.max(0, before.hp - report.received));
-      if (healthBar) healthBar.style.width = `${Math.max(0, before.hp - report.received) / before.maxHp * 100}%`;
+      if (health) health.firstChild!.textContent = String(Math.max(0, beforeCounterHp - report.received));
+      if (healthBar) healthBar.style.width = `${Math.max(0, beforeCounterHp - report.received) / before.maxHp * 100}%`;
       if (this.settings.sound && !charging) this.audio.attack(report.received, blocked);
       await pause(this.duration(360));
       document.querySelector('.app-shell')?.classList.remove('player-struck', 'player-blocked');
@@ -194,7 +200,7 @@ export class CombatEffects {
     if (this.skipped) return;
     if ((report.levelsGained ?? 0) > 0) {
       const chainGained = chainBonus(after.spellLevel) - chainBonus(report.spellLevelBefore ?? before.spellLevel);
-      this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 自動連鎖 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 回復 +${report.healed}`);
+      this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 自動連鎖 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 成長回復 +${report.healed - (report.relicHealed ?? 0)}`);
       if (this.settings.sound) this.audio.growth();
       await pause(this.duration(340));
     }

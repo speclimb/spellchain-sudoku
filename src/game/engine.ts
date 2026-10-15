@@ -4,6 +4,7 @@ import { canTakeReward, rollRewards, rollSkillRewards, rollRelicRewards, applyGr
 import { skillLevel, selectedSkill, skillValues, relicValues } from './growth';
 import { enemyForRun, enemyIncoming, applyEnemyArmor } from './enemies';
 import { effectMetrics, recordContribution } from './contributions';
+import { prepareRelicReward } from './relic-slots';
 import { beginHistory, ensureHistoryRun, recordHistory, forkHistory, historyKey } from './history';
 export { canTakeReward } from './rewards';
 import { Random, PEERS, UNITS, candidates, near, row, col } from './sudoku';
@@ -74,12 +75,12 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
   ensureHistoryRun(next);
   const run: Run = {
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0, balanceVersion: 2, castCounter: 0,
-    expansionVersion: 1, enemyRulesVersion: 1, enemyHealthVersion: 1, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
+    expansionVersion: 1, relicBalanceVersion: 1, stowedRelics: {}, enemyRulesVersion: 1, enemyHealthVersion: 1, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
     character, skillRank: 1, stage: 0, turn: 0, phase: 'battle', cells: [], solution: [], givens: [], marks: [],
     puzzleOrder: random.shuffle(bank.map((_, i) => i)), puzzleCursor: 0, sheet: 1, encounterSheet: 1, spellLevel: 1,
     freeSkillTokens: 0, reservedAuto: 0, boons: { defense: 0, magic: 0 },
     hp: 40, maxHp: 40, mana: 0, manaOverflow: 0, enemyHp: 0, score: 0, inventory: [], acquisitionRank: {}, tier: {},
-    pool: RELICS.filter(r => r.unlock <= save.meta.clears).map(r => r.id), rewards: [], afterglow: false,
+    pool: RELICS.map(r => r.id), rewards: [], afterglow: false,
     stats: { moves: 0, filled: 0, bestChain: 0, kills: 0, skills: 0, sheets: 0 }, lastReport: null,
   };
   prepareBoard(run, random); run.enemyHp = enemyForRun(run).hp; run.randomState = random.state;
@@ -141,8 +142,10 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   let rekindled = false, hopsLeft = values?.fuseHops ?? 0, reconnectsLeft = values?.reconnects ?? 0, maxShield = sheetShield(source), rawDamage = 0, wardShield = 0, maxMarkedShield = 0;
   let rawWithout: Partial<Record<RelicId, number>> = {};
   const damageRelics = ['pen', 'lens', 'stroke', 'glass', 'amplifier', 'echo'] as const;
-  let multiplier = spellMultiplier(source.spellLevel) * relicValues(run, 'glass').damageMultiplier;
-  if (skill) multiplier *= relicValues(run, 'amplifier').skillMultiplier * (values?.damageMultiplier ?? 1);
+  const glassMultiplier = relicValues(run, 'glass').damageMultiplier;
+  const amplifierMultiplier = skill ? relicValues(run, 'amplifier').skillMultiplier : 1;
+  const relicMultiplier = run.relicBalanceVersion ? glassMultiplier + amplifierMultiplier - 1 : glassMultiplier * amplifierMultiplier;
+  const multiplier = spellMultiplier(source.spellLevel) * relicMultiplier * (values?.damageMultiplier ?? 1);
   const completionMultiplier = values?.completionMultiplier ?? 1;
   const path: FillEvent[] = [], segments: SheetSegment[] = [];
   let segment: SheetSegment, initiallySingle: boolean[];
@@ -165,8 +168,9 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     maxMarkedShield = Math.max(maxMarkedShield, sheetShield(run) - wardPart);
     wardShield = maxShield - maxMarkedShield;
     for (const id of damageRelics) if (has(id)) {
-      const factor = id === 'glass' ? relicValues(run, id).damageMultiplier : id === 'amplifier' && skill ? relicValues(run, id).skillMultiplier : 1;
-      const base = Math.floor((rawWithout[id] ?? rawDamage) * multiplier / factor);
+      const factor = id === 'glass' ? glassMultiplier : id === 'amplifier' ? amplifierMultiplier : 1;
+      const withoutMultiplier = run.relicBalanceVersion ? multiplier * (relicMultiplier - (factor - 1)) / relicMultiplier : multiplier / factor;
+      const base = Math.floor((rawWithout[id] ?? rawDamage) * withoutMultiplier);
       const clear = segment.fullClear && blanks ? Math.floor(base * filled / (4 * blanks)) : 0;
       const total = without[id] ??= { base: 0, clear: 0 }; total.base += base; total.clear += clear;
     }
@@ -190,13 +194,13 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     const stroke = has('stroke') && path.length <= relicValues(run, 'stroke').strokeCells ? relicValues(run, 'stroke').strokeMultiplier : 1;
     const base = Math.min(80, 10 + (path.length - 1) * 2);
     const completion = units.length * (20 + (run.character === 'scribe' ? 10 : 0) + relicValues(run, 'pen').completion) * completionMultiplier;
-    const weak = run.marks[target] === 'weak' ? relicValues(run, 'lens').weakDamage : 0;
+    const weak = run.marks[target] === 'weak' ? relicValues(run, 'lens').weakDamage + (kind === 'root' ? relicValues(run, 'lens').weakRootDamage : 0) : 0;
     const echoDamage = kind === 'echo' ? relicValues(run, 'echo').echoDamage : 0;
     const amount = (base + completion + weak + echoDamage) * stroke;
     rawDamage += amount;
     for (const id of damageRelics) if (has(id)) {
       const removed = id === 'pen' ? units.length * relicValues(run,id).completion * completionMultiplier * stroke
-        : id === 'lens' && run.marks[target] === 'weak' ? (relicValues(run,id).weakDamage - 8) * stroke
+        : id === 'lens' && run.marks[target] === 'weak' ? (weak - 8) * stroke
         : id === 'stroke' ? amount - (base + completion + weak + echoDamage)
         : id === 'echo' ? echoDamage * stroke : 0;
       rawWithout[id] = (rawWithout[id] ?? 0) + amount - removed;
@@ -260,7 +264,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   if (freeSkill) run.freeSkillTokens--;
   else if (skill) { run.mana = stored; run.manaOverflow = 0; }
   else {
-    const gained = path.length + (run.character === 'lumen' ? 1 : 0) + relicValues(run, 'battery').charge;
+    const gained = (run.relicBalanceVersion ? Math.min(5, path.length) : path.length) + (run.character === 'lumen' ? 1 : 0) + relicValues(run, 'battery').charge;
     run.mana = Math.min(8, oldMana + gained);
     run.manaOverflow = has('battery') ? Math.min(relicValues(run, 'battery').overflow, stored + Math.max(0, oldMana + gained - 8)) : 0;
   }
@@ -270,7 +274,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   const weakCount = path.filter(event => event.mark === 'weak').length;
   const extraDamage = Math.floor(((values?.weakAttack ?? 0) * weakCount + (weakCount >= 3 ? values?.weakBurst ?? 0 : 0) + maxShield * (values?.shieldAttack ?? 0)) * spellMultiplier(source.spellLevel));
   if (metrics.ward && values?.shieldAttack) without.ward = { base: baseDamage, clear: clearBonus, extra: Math.floor((maxShield - wardShield) * values.shieldAttack * spellMultiplier(source.spellLevel)) };
-  if (metrics.battery && !skill) { metrics.battery.opportunities++; metrics.battery.triggers++; metrics.battery.mana += Math.max(0, run.mana + run.manaOverflow - Math.min(8, oldMana + path.length + (run.character === 'lumen' ? 1 : 0)) - stored); }
+  if (metrics.battery && !skill) { metrics.battery.opportunities++; metrics.battery.triggers++; metrics.battery.mana += Math.max(0, run.mana + run.manaOverflow - Math.min(8, oldMana + (run.relicBalanceVersion ? Math.min(5, path.length) : path.length) + (run.character === 'lumen' ? 1 : 0)) - stored); }
   if (metrics.quint && freeSkill) metrics.quint.tokensUsed++;
   if (metrics.amplifier && skill) { metrics.amplifier.opportunities++; metrics.amplifier.triggers++; }
   if (metrics.glass) { metrics.glass.opportunities++; metrics.glass.triggers++; }
@@ -315,6 +319,10 @@ function settleCast(plan: CastPlan, triggered: ReadonlySet<PrimeRelicId>): Run {
   report.defeated = report.damage >= run.enemyHp;
   const reduction = Math.min(.6, (run.boons?.defense ? .25 : 0) + effect('duality'));
   report.received = report.defeated ? 0 : Math.ceil(Math.max(0, report.incoming - report.shield) * (1 - reduction));
+  // Gold sustains ordinary casts before the counter. Sheet growth still heals
+  // only after surviving that counter, independently of the relic.
+  const relicHealed = !report.skill && report.units > 0 ? Math.min(run.maxHp - run.hp, relicValues(run, 'gold').completionHeal) : 0;
+  if (run.relicBalanceVersion) { report.relicHealed = relicHealed; report.healed = relicHealed; }
   report.attackScore = Math.floor(report.damage * relicValues(run, 'gold').scoreMultiplier);
   const metrics = structuredClone(plan.metrics);
   for (const [id, lower] of Object.entries(plan.without) as [RelicId, {base:number;clear:number;extra?:number}][]) {
@@ -327,9 +335,9 @@ function settleCast(plan: CastPlan, triggered: ReadonlySet<PrimeRelicId>): Run {
   if (metrics.ward) { metrics.ward.opportunities++; metrics.ward.triggers += Number(plan.wardShield > 0); metrics.ward.prevented = report.defeated ? 0 : Math.max(0, Math.ceil(Math.max(0, report.incoming - Math.max(0, report.shield - plan.wardShield)) * (1 - reduction)) - report.received); }
   if (metrics.quint) metrics.quint.tokensGranted = effect('quint');
   if (metrics.sept) metrics.sept.fuelGranted = effect('sept'); // generation here; FIFO consumption appears on the next cast
-  if (metrics.gold) { metrics.gold.opportunities++; metrics.gold.triggers++; metrics.gold.score = report.attackScore - report.damage; }
+  if (metrics.gold) { metrics.gold.opportunities++; metrics.gold.triggers++; metrics.gold.score = report.attackScore - report.damage; metrics.gold.healed = relicHealed; }
   report.ledger = { hpDamage: Math.min(run.enemyHp, report.damage), overkill: Math.max(0, report.damage - run.enemyHp), skillId: report.skillId, skillLevel: report.skillLevel, relics: metrics };
-  run.enemyHp = Math.max(0, run.enemyHp - report.damage); run.hp = Math.max(0, run.hp - report.received); run.score += report.attackScore;
+  run.enemyHp = Math.max(0, run.enemyHp - report.damage); run.hp = Math.max(0, run.hp + relicHealed - report.received); run.score += report.attackScore;
   if (effect('quint')) run.freeSkillTokens = effect('quint');
   if (effect('sept')) run.reservedAuto = effect('sept');
   run.turn++; run.castCounter++; run.stats.moves++; run.stats.filled += report.path.length;
@@ -372,7 +380,7 @@ const longestCache = new Map<string, { cells: number[]; length: number }>();
 /** Cache only path-relevant state, independent of selection/render. Bounded by
  * entries, not chain length. A fresh revision/resource/mode/board invalidates. */
 export function longestOrigins(run: Run, skill = false, requested?: SkillId): { cells: number[]; length: number } {
-  const key = JSON.stringify([run.id, run.revision, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
+  const key = JSON.stringify([run.id, run.revision, run.relicBalanceVersion, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
   const cached = longestCache.get(key); if (cached) return { cells: [...cached.cells], length: cached.length };
   const result = { cells: [] as number[], length: 0 };
   for (const cell of legalOrigins(run, skill, requested)) {
@@ -394,6 +402,7 @@ export function resolveAction(source: Run, action: Action): Run {
     run.equippedSkills = [...action.skills];
   } else if (action.type === 'reward') {
     if (run.phase !== 'reward' || !run.rewards.includes(action.relic) || !canTakeReward(run, action.relic)) throw new Error('この報酬は選べません。');
+    prepareRelicReward(run, action.relic, action.replace);
     const firstBossStep = run.expansionVersion && run.rewardStep === 'skill';
     if (!firstBossStep) run.boons = { defense: Math.max(0, (run.boons?.defense ?? 0) - 1), magic: Math.max(0, (run.boons?.magic ?? 0) - 1) };
     if (applyGrowthReward(run, action.relic)) { /* Growth changes only once in this reducer. */ }
@@ -418,7 +427,8 @@ export function resolveAction(source: Run, action: Action): Run {
       run.lastReport = null; run.rewardStep = 'relic'; run.rewards = run.pendingRelicRewards ?? []; run.pendingRelicRewards = [];
       if (run.rewards.length !== 3) throw new Error('次の遺物報酬を読み込めません。');
     } else {
-    run.stage++; run.balanceVersion = 2; run.enemyRulesVersion = run.expansionVersion ? 1 : 0; run.enemyHealthVersion = 1; nextBoard(run, random); run.encounterSheet = 1;
+    run.stage++; run.balanceVersion = 2; run.relicBalanceVersion = 1; run.enemyRulesVersion = run.expansionVersion ? 1 : 0; run.enemyHealthVersion = 1; nextBoard(run, random); run.encounterSheet = 1;
+    run.manaOverflow = Math.min(run.manaOverflow, relicValues(run, 'battery').overflow);
     run.enemyHp = enemyForRun(run).hp;
     if (run.boons.magic) run.mana = 8;
     run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null; run.rewardStep = undefined; run.pendingRelicRewards = [];

@@ -4,6 +4,7 @@ import bank from '../src/game/puzzles.json';
 import { CHARACTERS, ENEMIES, REPEATABLE_REWARDS, RELICS, primeIds, characterOf, enemyOf, rewardOf } from '../src/game/content';
 import { canUseSkill, chainBonus, chainCapacity, dispatch, incomingAttack, newSave, previewAction, resolveAction, sheetShield, spellMultiplier, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
+import { needsRelicReplacement } from '../src/game/relic-slots';
 import { candidates, countSolutions, PEERS, singles, solveSingles, UNITS } from '../src/game/sudoku';
 import type { CharacterId, Run, Save } from '../src/game/types';
 
@@ -29,7 +30,8 @@ function informedReward(run: Run) {
   if (run.rewards.includes('recovery') && run.hp < run.maxHp * 0.65) return { type: 'reward' as const, relic: 'recovery' as const, revision: run.revision };
   const preference = ['skill-upgrade', 'greater:wick', 'greater:lens', 'greater:stroke', 'greater:trinity', 'greater:duality', 'greater:quint', 'greater:sept', 'magic-boon', 'defense-boon', 'duality', 'quint', 'sept', 'ward', 'wick', 'echo', 'rekindle', 'pen', 'lens', 'glass', 'amplifier', 'battery', 'afterglow', 'stroke', 'trinity', 'training', 'vitality', 'recovery', 'gold'];
   const relic = [...run.rewards].sort((a, b) => (preference.includes(a) ? preference.indexOf(a) : 999) - (preference.includes(b) ? preference.indexOf(b) : 999))[0];
-  return { type: 'reward' as const, relic, revision: run.revision };
+  const replace = needsRelicReplacement(run, relic) ? [...run.inventory].sort((a, b) => preference.indexOf(b) - preference.indexOf(a))[0] : undefined;
+  return { type: 'reward' as const, relic, replace, revision: run.revision };
 }
 interface EncounterSample {
   encounter: number; enemyHp: number; attack: number; moves: number; sheets: number; filled: number;
@@ -97,8 +99,8 @@ describe('deterministic actions', () => {
     run.inventory = ['pen', 'ward', 'glass', 'amplifier']; run.enemyHp = 400;
     const report = previewAction(run, 40, true);
     expect(report.units).toBe(3);
-    expect(report.shield).toBe(9);
-    const base = Math.floor((10 + 3 * (20 + 10 + 20) * 3) * 1.25 * 1.5);
+    expect(report.shield).toBe(6);
+    const base = Math.floor((10 + 3 * (20 + 10 + 20) * 3) * (1 + .2 + .35));
     expect(report.baseDamage).toBe(base); expect(report.clearBonus).toBe(Math.floor(base * .25));
     expect(report.damage).toBe(base + Math.floor(base * .25));
     expect(report.fullClear).toBe(true);
@@ -124,7 +126,7 @@ describe('deterministic actions', () => {
   it('triggers rekindle once even when the first fill completes three units', () => {
     const run = fixture().run!; run.inventory = ['rekindle'];
     const report = previewAction(run, singles(run.cells)[0]);
-    expect(report.path.length).toBeLessThanOrEqual(8);
+    expect(report.path.length).toBeLessThanOrEqual(7);
     run.cells = [...run.solution]; run.cells[0] = 0;
     expect(previewAction(run, 0).path).toHaveLength(1);
   });
@@ -145,7 +147,7 @@ describe('deterministic actions', () => {
     expect(report.sweep.length).toBeGreaterThan(0);
     expect(report.path.length + report.sweep.length).toBe(36);
     expect(run.stats.filled).toBe(report.path.length);
-    expect(run.mana).toBe(Math.min(8, report.path.length));
+    expect(run.mana).toBe(Math.min(5, report.path.length));
     expect(run.score).toBe(Math.floor(report.damage * 1.5) + 500);
     expect(result.meta.clears).toBe(save.meta.clears + 1);
     expect(run.cells).toEqual(run.solution);
@@ -198,18 +200,18 @@ describe('progression, rewards and persistence', () => {
     const a = blanks[0], b = blanks.find(cell => cell !== a && !PEERS[a].includes(cell))!;
     expect(b).toBeDefined(); run.cells = [...run.solution]; run.cells[a] = 0; run.cells[b] = 0;
     const givenUnits = UNITS.filter(unit => unit.every(cell => run.givens[cell])).length;
-    const beforeShield = 18 + (21 - givenUnits) * 3;
+    const beforeShield = 18 + (21 - givenUnits) * 2;
     expect(sheetShield(run)).toBe(beforeShield);
     const restored = parseSave(JSON.stringify(save)); expect(restored).toEqual(save);
     expect(sheetShield(restored.run!)).toBe(beforeShield);
     const forecast = previewAction(run, a), next = dispatch(restored, play(run, a));
     expect(forecast.path).toHaveLength(1); expect(forecast.chain!.stopReason).toBe('no-target');
-    expect(forecast.shield).toBe(beforeShield + 9); expect(forecast.incoming).toBe(enemyOf(12).attack); expect(forecast.received).toBe(0);
+    expect(forecast.shield).toBe(beforeShield + 6); expect(forecast.incoming).toBe(enemyOf(12).attack); expect(forecast.received).toBe(0);
     expect(next.run!.lastReport).toEqual(forecast); expect(next.run!.hp).toBe(run.hp);
     expect(sheetShield(next.run!)).toBe(forecast.shield);
     const loaded = parseSave(JSON.stringify(next)), finalForecast = previewAction(loaded.run!, b);
     expect(finalForecast).toMatchObject({ fullClear: true, defeated: false, incoming: enemyOf(12).attack, received: 0, sheetAdvanced: true });
-    expect(finalForecast.shield).toBe(18 + (27 - givenUnits) * 3);
+    expect(finalForecast.shield).toBe(18 + (27 - givenUnits) * 2);
     const final = dispatch(loaded, play(loaded.run!, b));
     expect(final.run!.lastReport).toEqual(finalForecast);
     expect(final.run!.stage).toBe(run.stage); expect(final.run!.turn).toBe(run.turn + 2);
@@ -237,7 +239,7 @@ describe('progression, rewards and persistence', () => {
     expect(UNITS.filter(unit => unit.every(cell => run.givens[cell]))).toHaveLength(8);
     expect(sheetShield(run)).toBe(0);
     run.cells = [...run.solution];
-    expect(sheetShield(run)).toBe((27 - 8) * 3);
+    expect(sheetShield(run)).toBe((27 - 8) * 2);
   });
   it('does not award defenses from an enemy victory sweep, including restored reward and legacy won states', () => {
     const save = fixture(21), run = save.run!;
@@ -292,7 +294,7 @@ describe('progression, rewards and persistence', () => {
       expect(next.run!.rewards.every(id => !!rewardOf(id))).toBe(true);
       expect(dispatch(save, play(run))).toEqual(next); expect(parseSave(JSON.stringify(next))).toEqual(next);
       for (const relic of next.run!.rewards) {
-        const reward = { type: 'reward' as const, relic, revision: next.run!.revision };
+        const reward = { type: 'reward' as const, relic, replace: needsRelicReplacement(next.run!, relic) ? next.run!.inventory[0] : undefined, revision: next.run!.revision };
         const advanced = dispatch(next, reward);
         expect(dispatch(parseSave(JSON.stringify(next)), reward)).toEqual(advanced);
         expect(advanced.run).toMatchObject({ phase: 'battle', stage: 13, encounterSheet: 1, enemyHp: enemyOf(13).hp });
@@ -372,7 +374,7 @@ describe('progression, rewards and persistence', () => {
     expect(result).toMatchObject({ phase: 'reward', spellLevel: 6, maxHp: 48, hp: 40, sheet: 1, encounterSheet: 1 });
     expect(report).toMatchObject({ fullClear: true, defeated: true, sheetAdvanced: false, levelsGained: 2, maxHpGained: 8, healed: 20, spellLevelBefore: 4, spellLevelAfter: 6 });
     expect(result.stats.sheets).toBe(1); expect(result.stats.kills).toBe(1);
-    const advanced = resolveAction(result, { type: 'reward', relic: result.rewards.find(id => id !== 'glass')!, revision: result.revision });
+    const advanced = resolveAction(result, { type: 'reward', relic: result.rewards.find(id => id !== 'glass' && id !== 'training')!, revision: result.revision });
     expect(advanced).toMatchObject({ stage: 1, spellLevel: 6, sheet: 2, encounterSheet: 1, turn: 0, enemyHp: ENEMIES[1].hp });
   });
   it('uses all 30 sources before deterministic replenishment without an immediate repeat', () => {
@@ -415,19 +417,25 @@ describe('progression, rewards and persistence', () => {
     invalid.run!.puzzleCursor = 2; invalid.run!.puzzleOrder[29] = invalid.run!.puzzleOrder[0];
     expect(() => parseSave(JSON.stringify(invalid))).toThrow('問題');
   });
-  it('unlocks by cumulative clears and freezes the relic pool for the current run', () => {
+  it('offers every relic from the start while keeping cumulative character unlocks', () => {
+    const allRelics = RELICS.map(relic => relic.id);
+    expect(fixture(13, 'fuse', 0).run!.pool).toEqual(allRelics);
+    expect(() => startRun(newSave(), 'scribe', 2)).toThrow();
     const save = fixture(13, 'fuse', 2); save.run!.enemyHp = 1;
-    expect(save.run!.pool).toHaveLength(13);
+    expect(save.run!.pool).toEqual(allRelics);
+    expect(() => startRun(save, 'scribe', 2)).toThrow();
     const next = dispatch(save, play(save.run!));
-    expect(next.meta.clears).toBe(3); expect(next.run!.pool).not.toContain('echo');
-    expect(startRun(next, 'scribe', 2).run!.pool).toContain('echo');
+    expect(next.meta.clears).toBe(3); expect(next.run!.pool).toEqual(allRelics);
+    expect(startRun(next, 'scribe', 2).run!.pool).toEqual(allRelics);
     expect(() => startRun(next, 'lumen', 2)).toThrow();
-    expect(fixture(1, 'lumen', 12).run!.pool).toHaveLength(16);
+    const beforeLumen = newSave(); beforeLumen.meta.clears = 11;
+    expect(() => startRun(beforeLumen, 'lumen', 2)).toThrow();
+    expect(fixture(1, 'lumen', 12).run!.pool).toEqual(allRelics);
   });
-  it('offers three distinct unowned relics with an affinity option when available', () => {
+  it('preserves three distinct unowned relics and affinity in versionless reward rolls', () => {
     for (const c of CHARACTERS) {
       for (let seed = 0; seed < 10; seed++) {
-        const save = fixture(seed, c.id); save.run!.enemyHp = 1;
+        const save = fixture(seed, c.id); save.run!.enemyHp = 1; delete save.run!.relicBalanceVersion;
         const run = dispatch(save, play(save.run!)).run!;
         expect(run.rewards).toHaveLength(3);
         expect(new Set(run.rewards).size).toBe(3);
@@ -499,7 +507,10 @@ describe('progression, rewards and persistence', () => {
         }
         const run = save.run!;
         expect(run.stats.sheets).toBeGreaterThan(0); expect(run.spellLevel).toBeGreaterThan(6);
-        expect(parseSave(JSON.stringify(save))).toEqual(save);
+        // This simulation excludes primes deliberately; loading restores the
+        // public pool while preserving its completed combat and inventory.
+        const expandedPool = [...run.pool, ...RELICS.map(relic => relic.id).filter(id => !run.pool.includes(id))];
+        expect(parseSave(JSON.stringify(save))).toEqual({ ...save, run: { ...run, pool: expandedPool } });
         expect(run.phase).toBe('lost'); expect(run.stats.kills).toBeGreaterThan(6);
         expect(run.stats.bestChain).toBeGreaterThanOrEqual(20); expect(run.lastReport!.received).toBeGreaterThanOrEqual(run.lastReport!.hpBefore);
         results.push({ character: character.id, seed, phase: run.phase, kills: run.stats.kills, moves: run.stats.moves, sheets: run.sheet, level: run.spellLevel, hp: run.hp, maxHp: run.maxHp, bestChain: run.stats.bestChain, encounters });

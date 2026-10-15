@@ -1,7 +1,7 @@
 import { enemyForRun } from './enemies';
 import type { BattleLedger, EffectMetric, RelicId, Report, Run } from './types';
 
-export const emptyEffect = (): EffectMetric => ({ heldCasts: 0, opportunities: 0, triggers: 0, damage: 0, addedInputs: 0, fuelGranted: 0, fuelUsed: 0, mana: 0, prevented: 0, tokensGranted: 0, tokensUsed: 0, score: 0 });
+export const emptyEffect = (): EffectMetric => ({ heldCasts: 0, opportunities: 0, triggers: 0, damage: 0, addedInputs: 0, fuelGranted: 0, fuelUsed: 0, mana: 0, prevented: 0, tokensGranted: 0, tokensUsed: 0, score: 0, healed: 0 });
 export function effectMetrics(run: Run): Partial<Record<RelicId, EffectMetric>> {
   return Object.fromEntries(run.inventory.map(id => [id, { ...emptyEffect(), heldCasts: 1 }]));
 }
@@ -26,7 +26,7 @@ export function recordContribution(run: Run, report: Report): void {
   }
   for (const [id, metric] of Object.entries(report.ledger.relics) as [RelicId, EffectMetric][]) {
     const value = battle.relics[id] ??= emptyEffect();
-    for (const key of Object.keys(value) as (keyof EffectMetric)[]) value[key] += metric[key];
+    for (const key of Object.keys(emptyEffect()) as (keyof EffectMetric)[]) value[key] = (value[key] ?? 0) + (metric[key] ?? 0);
   }
 }
 export function mergeBattles(battles: BattleLedger[]): BattleLedger {
@@ -40,7 +40,7 @@ export function mergeBattles(battles: BattleLedger[]): BattleLedger {
     }
     for (const [id, value] of Object.entries(battle.relics)) {
       const target = merged.relics[id as RelicId] ??= emptyEffect();
-      for (const prop of Object.keys(target) as (keyof EffectMetric)[]) target[prop] += value![prop];
+      for (const prop of Object.keys(emptyEffect()) as (keyof EffectMetric)[]) target[prop] = (target[prop] ?? 0) + (value![prop] ?? 0);
     }
   }
   return merged;

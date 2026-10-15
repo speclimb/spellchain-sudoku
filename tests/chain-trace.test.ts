@@ -52,13 +52,13 @@ describe('explanatory chain trace', () => {
     const run = boardWith([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     run.inventory = ['wick', 'afterglow']; run.afterglow = true; run.mana = 8;
     const normal = trace(run, 0);
-    expect(normal.initialAuto).toBe(8);
+    expect(normal.initialAuto).toBe(7);
     expect(normal.bonuses).toEqual([
       { label: '基本', amount: 3 }, { label: '導火術師', amount: 1 },
-      { label: '長い導火線', amount: 2 }, { label: '残光の灯', amount: 2 },
+      { label: '長い導火線', amount: 1 }, { label: '残光の灯', amount: 2 },
     ]);
     const skill = trace(run, 0, true);
-    expect(skill.initialAuto).toBe(10);
+    expect(skill.initialAuto).toBe(9);
     expect(skill.bonuses.some(b => b.label === '残光の灯')).toBe(false);
   });
 
@@ -108,15 +108,15 @@ describe('explanatory chain trace', () => {
   it('attributes rekindle exactly once even on multi-unit completion, including root and echo fills', () => {
     const rootRun = boardWith([0]); rootRun.inventory = ['rekindle'];
     const root = trace(rootRun, 0);
-    expect(root.steps[0]).toMatchObject({ remainingBefore: 4, remainingAfter: 7, addedAuto: 3 });
+    expect(root.steps[0]).toMatchObject({ remainingBefore: 4, remainingAfter: 6, addedAuto: 2 });
     expect(root.stopReason).toBe('board-complete');
     // Same-value cells cannot share a unit. Keep a peer of the root blank so
     // only the echo completes units, then check that its free step can refuel.
     const echoRun = boardWith([0, 1, 9, 15]); echoRun.inventory = ['echo', 'rekindle'];
     const echoTrace = trace(echoRun, 0);
     expect(echoTrace.steps[0].addedAuto).toBe(0);
-    expect(echoTrace.steps[1]).toMatchObject({ source: 'echo', cell: 15, remainingBefore: 4, remainingAfter: 7, addedAuto: 3 });
-    expect(echoTrace.steps.reduce((sum, s) => sum + s.addedAuto, 0)).toBe(3);
+    expect(echoTrace.steps[1]).toMatchObject({ source: 'echo', cell: 15, remainingBefore: 4, remainingAfter: 6, addedAuto: 2 });
+    expect(echoTrace.steps.reduce((sum, s) => sum + s.addedAuto, 0)).toBe(2);
     for (const s of echoTrace.steps) expect(s.remainingAfter).toBe(s.remainingBefore - (s.source === 'chain' ? 1 : 0) + s.addedAuto);
   });
 

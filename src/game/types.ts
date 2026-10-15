@@ -45,6 +45,7 @@ export interface EffectMetric {
   heldCasts: number; opportunities: number; triggers: number; damage: number;
   addedInputs: number; fuelGranted: number; fuelUsed: number; mana: number;
   prevented: number; tokensGranted: number; tokensUsed: number; score: number;
+  healed?: number;
 }
 export interface SkillMetric { uses: number; damage: number; hpDamage: number; overkill: number; level: number }
 export interface BattleLedger {
@@ -63,6 +64,8 @@ export interface Report {
   segments?: SheetSegment[]; sheetsCompleted?: number; freeSkill?: boolean; procs?: PrimeProcOutcome[];
   skill: boolean; path: FillEvent[]; damage: number; attackScore: number;
   shield: number; incoming: number; received: number; healed: number; charge: number;
+  /** Relic healing applied before retaliation; included in healed. */
+  relicHealed?: number;
   units: number; weak: number; defeated: boolean; fullClear: boolean; sweep: number[];
   hpBefore: number; enemyBefore: number;
   /** Optional for reports restored from earlier version-1 saves. */
@@ -82,6 +85,9 @@ export interface Run {
   enemyHealthVersion?: 0 | 1;
   skillLevels?: Partial<Record<SkillId, number>>; equippedSkills?: SkillId[];
   relicLevels?: Partial<Record<RelicId, number>>;
+  stowedRelics?: Partial<Record<RelicId, { level: number; rank: number; tier: number }>>;
+  /** Missing preserves the previously started encounter's relic effects. */
+  relicBalanceVersion?: 1;
   rewardStep?: RewardStep; pendingRelicRewards?: RewardId[];
   contributions?: ContributionHistory;
   character: CharacterId; skillRank: 1 | 2; stage: number; turn: number; phase: Phase;
@@ -96,7 +102,7 @@ export interface Run {
 }
 export type Action =
   | { type: 'play'; cell: number; skill: boolean; skillId?: SkillId; revision: number }
-  | { type: 'reward'; relic: RewardId; revision: number }
+  | { type: 'reward'; relic: RewardId; replace?: RelicId; revision: number }
   | { type: 'equip'; skills: SkillId[]; revision: number };
 export interface Meta { clears: number; runs: number; wins: number; bestScore: number; bestKills: number; tutorialDone: boolean }
 export interface Settings { sound: boolean; fast: boolean; reducedMotion: boolean }

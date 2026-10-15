@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { newSave, startRun } from '../src/game/engine';
 import { contributionReport, contributionSummary, effectRows } from '../src/ui/contribution-report';
-import { damageBreakdown, percentText, procEffect } from '../src/ui/report-presentation';
-import type { BattleLedger, EffectMetric, Report } from '../src/game/types';
+import { damageBreakdown, healingText, percentText, procEffect } from '../src/ui/report-presentation';
+import type { BattleLedger, EffectMetric, Preview, Report } from '../src/game/types';
 
 const metric = (value: Partial<EffectMetric> = {}): EffectMetric => ({ heldCasts: 0, opportunities: 0, triggers: 0, damage: 0, addedInputs: 0, fuelGranted: 0, fuelUsed: 0, mana: 0, prevented: 0, tokensGranted: 0, tokensUsed: 0, score: 0, ...value });
 const battle = (stage: number): BattleLedger => ({ stage, boss: stage === 4, casts: 2, damage: 120, hpDamage: 100, overkill: 20, score: 180, skills: { fuse: { uses: 1, damage: 70, hpDamage: 50, overkill: 20, level: stage + 1 } }, relics: { pen: metric({ heldCasts: 2, opportunities: 1, triggers: 1, damage: 30 }), sept: metric({ heldCasts: 2, opportunities: 1, fuelGranted: 7, fuelUsed: 3, addedInputs: 3 }) } });
@@ -38,6 +38,28 @@ describe('contribution report presentation', () => {
   });
   it('does not imply reserved fuel directly filled cells', () => {
     expect(effectRows(metric({ fuelGranted: 14, fuelUsed: 3 }))).toEqual([{ label: '自動入力の付与 / 使用', value: '14 / 3回' }]);
+  });
+  it('keeps old metrics without healing and the past healing of retired relics readable', () => {
+    const run = startRun(newSave(), 'fuse', 3).run!;
+    run.stowedRelics = { gold: { level: 5, rank: 1, tier: 2 } };
+    const old = battle(0), current = battle(1);
+    old.relics = { gold: metric({ heldCasts: 2, score: 40 }) };
+    current.relics = { gold: metric({ heldCasts: 2, healed: 5 }) };
+    run.contributions = { sinceCast: 0, partial: false, battles: [old, current] };
+    const gold = contributionSummary(run).relics.gold!;
+    expect(gold.healed).toBe(5); expect(gold.score).toBe(40);
+    expect(effectRows(gold)).toContainEqual({ label: '反撃前に回復したHP', value: '＋5' });
+    const html = contributionReport(run), retired = html.slice(html.indexOf('data-relic-report="gold"'));
+    expect(retired).toContain('保管中 · Lv.5 · 上位');
+    expect(retired).not.toContain('<b>次の成長</b>');
+    expect(retired).toContain('保存したレベル・段階へ戻ります');
+    expect(html).not.toContain('NaN');
+  });
+  it('separates guaranteed pre-counter healing from possible post-counter growth', () => {
+    const report = { relicHealed: 2, healed: 2, forecast: { healedMin: 2, healedMax: 12 } } as Preview;
+    expect(healingText(report)).toBe('反撃前回復 ＋2 · 成長回復 ＋0〜10');
+    expect(healingText({ healed: 10 } as Preview)).toBe('成長回復 ＋10');
+    expect(healingText({ healed: 0 } as Preview)).toBe('');
   });
   it('explains overlap, small samples, unused skills and missing opportunities without ranking strength', () => {
     const run = startRun(newSave(), 'fuse', 3).run!;

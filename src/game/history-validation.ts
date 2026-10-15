@@ -7,10 +7,10 @@ const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is numbe
 const text = (v: unknown, max: number): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 const skills = ['fuse','scribe','lumen','bridge','pierce','bastion'];
 const relics = new Set(RELICS.map(r => r.id));
-const effects: (keyof EffectMetric)[] = ['heldCasts','opportunities','triggers','damage','addedInputs','fuelGranted','fuelUsed','mana','prevented','tokensGranted','tokensUsed','score'];
+const effects: (keyof EffectMetric)[] = ['heldCasts','opportunities','triggers','damage','addedInputs','fuelGranted','fuelUsed','mana','prevented','tokensGranted','tokensUsed','score','healed'];
 const known = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every(k => keys.includes(k));
 function metric(v: unknown, sparse = false): boolean {
-  return object(v) && known(v, effects) && Object.values(v).every(n => integer(n)) && (sparse || effects.every(k => integer(v[k])));
+  return object(v) && known(v, effects) && Object.values(v).every(n => integer(n)) && (sparse || effects.every(k => k === 'healed' && v[k] === undefined || integer(v[k])));
 }
 function ledger(v: any): boolean {
   return object(v) && integer(v.stage) && typeof v.boss === 'boolean' && (v.balanceVersion === undefined || [1,2].includes(v.balanceVersion))
@@ -26,13 +26,14 @@ function cast(v: any): boolean {
     && ['manaBefore','manaAfter','charged','overflowBefore','overflowAfter','overflowRestored'].every(k => integer(v[k],0,8))
     && typeof v.freeSkill === 'boolean' && (v.skillId === undefined ? v.skillLevel === undefined : skills.includes(v.skillId) && integer(v.skillLevel,1,10))
     && v.damage === v.hpDamage+v.overkill && v.hpDamage === Math.min(v.damage,v.enemyBefore) && v.overkill === Math.max(0,v.damage-v.enemyBefore)
-    && v.enemyAfter === Math.max(0,v.enemyBefore-v.damage) && v.hpLost === Math.min(v.hpBefore,v.received) && v.hpAfter === v.hpBefore-v.hpLost+v.healed
+    && (v.relicHealed === undefined || integer(v.relicHealed,0,Math.min(7,v.healed)))
+    && v.enemyAfter === Math.max(0,v.enemyBefore-v.damage) && v.hpLost === Math.min(v.hpBefore+(v.relicHealed ?? 0),v.received) && v.hpAfter === v.hpBefore-v.hpLost+v.healed
     && v.sheetTo >= v.sheetFrom && (v.stopReason === undefined || ['limit','no-target','board-complete'].includes(v.stopReason))
     && Array.isArray(v.procs) && v.procs.length <= 4 && new Set(v.procs.map((p: any) => p?.id)).size === v.procs.length
     && v.procs.every((p: any) => object(p) && ['duality','trinity','quint','sept'].includes(p.id) && typeof p.triggered === 'boolean'
       && typeof p.chance === 'number' && p.chance >= 0 && p.chance <= 1 && typeof p.value === 'number' && Number.isFinite(p.value) && p.value > 0 && known(p,['id','chance','value','triggered']))
     && object(v.relics) && Object.entries(v.relics).every(([id,e]) => relics.has(id as any) && object(e) && integer(e.level,1,10) && integer(e.tier,1,3) && metric(e.metric,true) && known(e,['level','tier','metric']))
-    && known(v,['id','turn','skillId','skillLevel','spellLevel','chain','sheetFrom','sheetTo','sheetsCompleted','damage','hpDamage','overkill','received','hpLost','incoming','shield','healed','hpBefore','hpAfter','enemyBefore','enemyAfter','freeSkill','score','procs','relics','fuelBefore','fuelAfter','tokensBefore','tokensAfter','manaBefore','manaAfter','charged','overflowBefore','overflowAfter','overflowRestored','stopReason']);
+    && known(v,['id','turn','skillId','skillLevel','spellLevel','chain','sheetFrom','sheetTo','sheetsCompleted','damage','hpDamage','overkill','received','hpLost','incoming','shield','healed','relicHealed','hpBefore','hpAfter','enemyBefore','enemyAfter','freeSkill','score','procs','relics','fuelBefore','fuelAfter','tokensBefore','tokensAfter','manaBefore','manaAfter','charged','overflowBefore','overflowAfter','overflowRestored','stopReason']);
 }
 /** Optional log corruption never invalidates a healthy board or reward roll. */
 export function parseHistory(value: unknown): PlayHistory | undefined {

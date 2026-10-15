@@ -10,22 +10,22 @@ export const primeIds: RelicId[] = ['duality', 'trinity', 'quint', 'sept'];
 export const greaterIds: GreaterRelicId[] = ['stroke', 'trinity', 'duality', 'quint', 'sept', 'lens', 'wick'];
 export interface Relic { id: RelicId; name: string; symbol: string; kind: string; description: string; unlock: number }
 export const RELICS: Relic[] = [
-  { id: 'wick', name: '長い導火線', symbol: '〰', kind: '連鎖', description: '自動入力回数＋2。もう少し先まで、魔法をつなぐ。', unlock: 0 },
-  { id: 'echo', name: '共鳴石', symbol: '◈', kind: '連鎖', description: '起点と同じ数字になる空きマスへ1回、無料で飛び火。そこから連鎖を続ける。', unlock: 3 },
-  { id: 'rekindle', name: '再燃の輪', symbol: '◎', kind: '連鎖', description: '各手で最初に行・列・区画を完成させると、自動入力回数＋3。', unlock: 6 },
+  { id: 'wick', name: '長い導火線', symbol: '〰', kind: '連鎖', description: '自動入力回数＋1。もう少し先まで、魔法をつなぐ。', unlock: 0 },
+  { id: 'echo', name: '共鳴石', symbol: '◈', kind: '連鎖', description: '起点と同じ数字になる空きマスへ1回、無料で飛び火。そこから連鎖を続ける。', unlock: 0 },
+  { id: 'rekindle', name: '再燃の輪', symbol: '◎', kind: '連鎖', description: '各手で最初に行・列・区画を完成させると、自動入力回数＋2。', unlock: 0 },
   { id: 'pen', name: '刻印のペン', symbol: '✒', kind: '完成', description: '行・列・区画の完成ダメージ＋20／単位。', unlock: 0 },
-  { id: 'ward', name: '守護の紋章', symbol: '⬡', kind: '守護', description: '行・列・区画の完成1単位につき守護＋3。同じシートでは毎手の反撃を軽減し、次のシートでリセット。', unlock: 0 },
+  { id: 'ward', name: '守護の紋章', symbol: '⬡', kind: '守護', description: '行・列・区画の完成1単位につき守護＋2。同じシートでは毎手の反撃を軽減し、次のシートでリセット。', unlock: 0 },
   { id: 'stroke', name: '一筆の杖', symbol: 'Ⅰ', kind: '技巧', description: '各手で最初に埋めた3マスのダメージを2倍。連鎖が長くなっても有効。', unlock: 0 },
-  { id: 'battery', name: '蓄電石', symbol: '⋈', kind: '魔力', description: '通常入力の手で魔力を追加＋2。超過分を2まで蓄え、次のスキル使用後に残す。', unlock: 0 },
-  { id: 'amplifier', name: '魔力増幅器', symbol: '✵', kind: '魔力', description: 'スキルで始めた手の総ダメージを1.5倍。', unlock: 12 },
+  { id: 'battery', name: '蓄電石', symbol: '⋈', kind: '魔力', description: '通常詠唱の魔力を追加＋1。超過分を2まで蓄え、有料スキル使用後に戻す。', unlock: 0 },
+  { id: 'amplifier', name: '魔力増幅器', symbol: '✵', kind: '魔力', description: 'スキル詠唱の通常攻撃ダメージ＋35％。硝子の杖の加算率と合算。', unlock: 0 },
   { id: 'afterglow', name: '残光の灯', symbol: '☼', kind: '魔力', description: 'スキル使用後、次の通常入力だけ自動入力回数＋2。戦闘を越えて残る。', unlock: 0 },
-  { id: 'lens', name: '弱点のレンズ', symbol: '⌖', kind: '技巧', description: '弱点マスの追加ダメージを8から20にする。', unlock: 0 },
-  { id: 'glass', name: '硝子の杖', symbol: '⟡', kind: '代償', description: '総ダメージ1.25倍。代わりに最大HP−8。現在HPも新しい上限まで下がる。', unlock: 0 },
+  { id: 'lens', name: '弱点のレンズ', symbol: '⌖', kind: '技巧', description: '弱点マスの追加ダメージを8から16にする。弱点を起点にすると、起点だけさらに＋8。', unlock: 0 },
+  { id: 'glass', name: '硝子の杖', symbol: '⟡', kind: '代償', description: '通常攻撃ダメージ＋20％（増幅器と加算率を合算）。所持中は最大HP−8。', unlock: 0 },
   { id: 'trinity', name: '三の護符', symbol: 'Ⅲ', kind: '確率', description: '数字「3」を埋めた手で30％の確率でダメージ1.5倍（シート完成の追加分を除く）。再取得で確率が45％、60％へ上がる（取得は3回まで）。', unlock: 0 },
   { id: 'duality', name: '二の護符', symbol: 'Ⅱ', kind: '確率', description: '数字「2」を埋めた手で30％の確率で、守護を引いた後の反撃を25％軽減。再取得で確率45％、60％（3回まで）。軽減の合計上限は60％。', unlock: 0 },
   { id: 'quint', name: '五の護符', symbol: 'Ⅴ', kind: '確率', description: '数字「5」を埋めた手で30％の確率で、魔力を使わないスキル券を1枚獲得（所持上限1枚）。券を持つ手・無料スキルの手は抽選しない。再取得で確率45％、60％（3回まで）。', unlock: 0 },
   { id: 'sept', name: '七の護符', symbol: 'Ⅶ', kind: '確率', description: '数字「7」を埋めた手で30％の確率で、次の1手の自動入力回数＋7を予約。予約は1件までで加算されない。再取得で確率45％、60％（3回まで）。', unlock: 0 },
-  { id: 'gold', name: '黄金のインク', symbol: '✧', kind: '得点', description: '攻撃から得るスコアを1.5倍。ダメージは変化しない。', unlock: 0 },
+  { id: 'gold', name: '黄金のインク', symbol: '✧', kind: '回復・得点', description: '攻撃から得るスコアを1.5倍。通常詠唱で行・列・区画を完成すると反撃前にHP2回復（1詠唱に1回）。', unlock: 0 },
 ];
 export const ENEMIES = [
   { name: '迷い火の精', title: 'THE WANDERING EMBER', hp: 1400, attack: 3, symbol: 'ember', lore: '一枚の魔法陣では消えない灯り。詠唱をつないで育てよう。' },
@@ -136,6 +136,14 @@ export function rewardOf(id: RewardId, run?: Run) {
   const relic = RELICS.find(r => r.id === id);
   if (relic) {
     if (run?.expansionVersion && run.rewardStep !== 'legacy') {
+      const archived = !run.inventory.includes(relic.id) ? run.stowedRelics?.[relic.id] : undefined;
+      if (archived) {
+        const next = structuredClone(run); next.inventory.push(relic.id);
+        next.relicLevels = { ...next.relicLevels, [relic.id]: archived.level };
+        next.acquisitionRank[relic.id] = archived.rank; next.tier[relic.id] = archived.tier;
+        return { ...relic, name: `${relic.name} Lv.${archived.level}を再取得`, kind: '再取得',
+          description: `以前のレベル・進化段階・護符の取得回数を復元。${relicGrowthDescription(next, relic.id)} 再取得によるレベル加算はない。` };
+      }
       const before = relicLevel(run, relic.id), after = Math.min(10, before + 1), next = structuredClone(run);
       next.relicLevels = { ...next.relicLevels, [relic.id]: after };
       if (!next.inventory.includes(relic.id)) next.inventory.push(relic.id);

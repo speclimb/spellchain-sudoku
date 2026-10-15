@@ -13,6 +13,12 @@ export function retaliationText(report: Preview): string {
   const forecast = report.forecast;
   return forecast ? rangeText(forecast.receivedMin, forecast.receivedMax) : fmt(report.received);
 }
+export function healingText(report: Preview): string {
+  const beforeCounter = report.relicHealed ?? 0;
+  const minimum = Math.max(0, (report.forecast?.healedMin ?? report.healed) - beforeCounter);
+  const maximum = Math.max(0, (report.forecast?.healedMax ?? report.healed) - beforeCounter);
+  return [beforeCounter ? `反撃前回復 ＋${fmt(beforeCounter)}` : '', maximum ? `成長回復 ＋${rangeText(minimum, maximum)}` : ''].filter(Boolean).join(' · ');
+}
 export function outcomeText(report: Preview): string {
   const forecast = report.forecast;
   const parts: string[] = [];
@@ -26,11 +32,11 @@ export function outcomeText(report: Preview): string {
     if (forecast.survival === 'possible') parts.push('不発時は生命力が尽きます');
     else if (forecast.survival === 'none') parts.push('反撃で生命力が尽きます');
     if (forecast.levelsGainedMax > 0) parts.push(`術式 ＋${rangeText(forecast.levelsGainedMin, forecast.levelsGainedMax)} Lv`);
-    if (forecast.healedMax > 0) parts.push(`回復 ${rangeText(forecast.healedMin, forecast.healedMax)}`);
   } else {
     if ((report.levelsGained ?? 0) > 0) parts.push(`術式 Lv.${report.spellLevelAfter}へ`);
-    if (report.healed > 0) parts.push(`回復 ${report.healed}`);
   }
+  const healing = healingText(report);
+  if (healing) parts.push(healing);
   return parts.join(' · ');
 }
 export function accessiblePrediction(report: Preview): string {

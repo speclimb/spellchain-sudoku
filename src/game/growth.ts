@@ -55,14 +55,14 @@ export interface RelicValues {
   level: number; tier: number; auto: number; echoes: number; echoDamage: number; rekindleAuto: number;
   completion: number; ward: number; strokeCells: number; strokeMultiplier: number; charge: number; overflow: number;
   skillMultiplier: number; afterglowAuto: number; weakDamage: number; damageMultiplier: number; scoreMultiplier: number;
-  chance: number; primeValue: number; carry: boolean;
+  chance: number; primeValue: number; carry: boolean; weakRootDamage: number; completionHeal: number;
 }
 /** One replacement value per effect: tier and level never reapply an old multiplier. */
 export function relicValues(run: Run, id: RelicId): RelicValues {
   const lv = relicLevel(run, id), tier = relicTierLevel(run, id), n = run.expansionVersion ? Math.max(0, lv - 1) : 0, t = tier - 1;
   const result: RelicValues = { level: lv, tier, auto: 0, echoes: 0, echoDamage: 0, rekindleAuto: 0, completion: 0, ward: 0,
     strokeCells: 0, strokeMultiplier: 1, charge: 0, overflow: 0, skillMultiplier: 1, afterglowAuto: 0, weakDamage: 8,
-    damageMultiplier: 1, scoreMultiplier: 1, chance: 0, primeValue: 0, carry: false };
+    damageMultiplier: 1, scoreMultiplier: 1, chance: 0, primeValue: 0, carry: false, weakRootDamage: 0, completionHeal: 0 };
   if (!lv) return result;
   // Finite, diminishing growth for rates. The first three prime acquisitions
   // retain exactly 30/45/60%; rank and tier are persisted independently of level.
@@ -80,6 +80,19 @@ export function relicValues(run: Run, id: RelicId): RelicValues {
   if (id === 'lens') result.weakDamage = 20 + n * 4 + t * 12;
   if (id === 'glass') result.damageMultiplier = 1.25 + diminishing * .5 + t * .1;
   if (id === 'gold') result.scoreMultiplier = 1.5 + diminishing + t * .25;
+  // Old in-flight battles retain their exact values until the next reward.
+  // Every level changes an effect; lower starting values and stored-mana caps
+  // soften stacking without offering a level-up that does nothing.
+  if (run.relicBalanceVersion === 1) {
+    if (id === 'wick') result.auto = 1 + n + (tier === 3 ? 1 : 0);
+    if (id === 'rekindle') result.rekindleAuto = 2 + n + t;
+    if (id === 'ward') result.ward = 2 + n + t;
+    if (id === 'battery') { result.charge = 1 + n - Math.floor(n / 4) + t; result.overflow = 2 + Math.floor(n / 4); }
+    if (id === 'amplifier') result.skillMultiplier = 1.35 + diminishing * .7 + t * .12;
+    if (id === 'lens') { result.weakDamage = 16 + n * 2 + t * 4; result.weakRootDamage = 8 + Math.floor(n / 2) + t * 4; }
+    if (id === 'glass') result.damageMultiplier = 1.2 + diminishing * .4 + t * .08;
+    if (id === 'gold') result.completionHeal = 2 + Math.floor(n / 3) + t;
+  }
   if (['duality', 'trinity', 'quint', 'sept'].includes(id)) {
     const rank = Math.min(3, Math.max(1, Math.floor(run.acquisitionRank[id] ?? 1)));
     result.chance = Math.min(.8, [.3, .45, .6][rank - 1] + chanceBonus);
@@ -120,11 +133,11 @@ export function relicGrowthDescription(run: Run, id: RelicId): string {
   if (id === 'ward') return `完成1単位につきシート守護＋${v.ward}。同じシートの反撃に毎手適用。`;
   if (id === 'stroke') return `最初の${v.strokeCells}マスの基本・完成・弱点ダメージを${numberText(v.strokeMultiplier)}倍。旧倍率と重複しない。`;
   if (id === 'battery') return `通常詠唱の魔力＋${v.charge}。超過分を${v.overflow}まで蓄え、有料スキル直後に戻す。無料券を先に使い魔力を温存。`;
-  if (id === 'amplifier') return `スキル詠唱の通常攻撃ダメージを${numberText(v.skillMultiplier)}倍。`;
+  if (id === 'amplifier') return run.relicBalanceVersion ? `スキル詠唱の通常攻撃ダメージ＋${percent(v.skillMultiplier - 1)}。硝子の杖の加算率と合算。` : `スキル詠唱の通常攻撃ダメージを${numberText(v.skillMultiplier)}倍。`;
   if (id === 'afterglow') return `スキル使用後、次の通常詠唱だけ自動入力＋${v.afterglowAuto}。戦闘を越えて保持。`;
-  if (id === 'lens') return `弱点マスの追加ダメージ${v.weakDamage}。${v.tier === 1 ? '上位でさらに＋12、極位で通常より＋24。' : v.tier === 2 ? '通常より＋12。極位でさらに＋12。' : '通常より＋24。'}弱点を埋めるたびに有効。`;
-  if (id === 'glass') return `通常攻撃ダメージ${numberText(v.damageMultiplier)}倍。初取得時のみ最大HP−8（強化では再減少しない）。`;
-  if (id === 'gold') return `攻撃由来の得点${numberText(v.scoreMultiplier)}倍。攻撃ダメージと撃破固定500点は変えない。`;
+  if (id === 'lens') return `弱点マスの追加ダメージ${v.weakDamage}。${v.weakRootDamage ? `弱点を起点にすると、起点だけさらに＋${v.weakRootDamage}。` : v.tier === 1 ? '上位でさらに＋12、極位で通常より＋24。' : v.tier === 2 ? '通常より＋12。極位でさらに＋12。' : '通常より＋24。'}弱点を埋めるたびに有効。`;
+  if (id === 'glass') return `${run.relicBalanceVersion ? `通常攻撃ダメージ＋${percent(v.damageMultiplier - 1)}（増幅器と加算率を合算）` : `通常攻撃ダメージ${numberText(v.damageMultiplier)}倍`}。所持中は最大HP−8（強化では再減少しない）。`;
+  if (id === 'gold') return `攻撃由来の得点${numberText(v.scoreMultiplier)}倍。${v.completionHeal ? `通常詠唱で行・列・区画を完成すると、反撃前にHP${v.completionHeal}回復（1詠唱に1回）。` : '攻撃ダメージと撃破固定500点は変えない。'}`;
   const digit = { duality: 2, trinity: 3, quint: 5, sept: 7 }[id as 'duality' | 'trinity' | 'quint' | 'sept'];
   const prefix = `数字「${digit}」を埋めた詠唱ごとに1回、${percent(v.chance)}で`;
   if (id === 'trinity') return `${prefix}通常攻撃${numberText(v.primeValue)}倍。完成加算・追加攻撃は増幅しない。旧倍率と重複しない。`;

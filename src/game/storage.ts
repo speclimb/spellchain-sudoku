@@ -29,7 +29,6 @@ export function parseSaveData(data: unknown): Save {
     if (!record(r) || !CHARACTERS.some(c => c.id === r.character) || !['battle', 'reward', 'won', 'lost'].includes(r.phase) || typeof r.id !== 'string' || typeof r.afterglow !== 'boolean') throw new Error('冒険の記録を読み込めません。');
     // Version the encounter balance rather than lowering or rejecting an old
     // enemy's current HP. Choosing its existing reward is the transition point.
-    const needsEndgameMigration = r.freeSkillTokens === undefined && r.reservedAuto === undefined && r.boons === undefined;
     if (r.freeSkillTokens === undefined) r.freeSkillTokens = 0;
     if (r.reservedAuto === undefined) r.reservedAuto = 0;
     if (r.boons === undefined) r.boons = { defense: 0, magic: 0 };
@@ -59,7 +58,8 @@ export function parseSaveData(data: unknown): Save {
       || (r.phase !== 'reward' && (r.rewardStep !== undefined || r.pendingRelicRewards.length))
       || (r.rewardStep === 'skill' && ((r.stage+1)%5 !== 0 || r.pendingRelicRewards.length !== 3))
       || (r.rewardStep !== 'skill' && r.pendingRelicRewards.length)) throw new Error('スキルと報酬段階の記録が不正です。');
-    if (![1, 2].includes(r.balanceVersion) || ![0, 1].includes(r.enemyHealthVersion) || ![1, 2].includes(r.skillRank) || !integer(r.manaOverflow, 0, 8)) throw new Error('成長の記録が不正です。');
+    if (![1, 2].includes(r.balanceVersion) || ![0, 1].includes(r.enemyHealthVersion) || ![1, 2].includes(r.skillRank) || !integer(r.manaOverflow, 0, 8)
+      || (r.relicBalanceVersion !== undefined && r.relicBalanceVersion !== 1)) throw new Error('成長の記録が不正です。');
     if (!integer(r.seed, 0, 0xffffffff) || !integer(r.randomState, 0, 0xffffffff) || !integer(r.revision) || !integer(r.stage) || !integer(r.turn) || !integer(r.maxHp, 1) || !integer(r.hp, 0, r.maxHp) || !integer(r.mana, 0, 8) || !integer(r.enemyHp, 0, enemyForRun(r as Run).hp) || !integer(r.score)) throw new Error('冒険の数値が不正です。');
     // The original v1 run stored six future boards. Keep that prefix, its current
     // board, HP and reward roll intact, then append all unused sources with a
@@ -76,11 +76,12 @@ export function parseSaveData(data: unknown): Save {
     if (!vector(r.solution, 81, v => integer(v, 1, 9)) || !UNITS.every(u => new Set(u.map(i => r.solution[i])).size === 9) || !vector(r.cells, 81, v => integer(v, 0, 9)) || !r.cells.every((v: number, i: number) => v === 0 || v === r.solution[i]) || !vector(r.givens, 81, v => typeof v === 'boolean') || r.givens.filter(Boolean).length !== 45 || !r.givens.every((v: boolean, i: number) => !v || r.cells[i] !== 0)) throw new Error('盤面の記録が不正です。');
     if (!vector(r.marks, 81, v => v === null || v === 'weak' || v === 'shield') || ['weak', 'shield'].some(kind => r.marks.filter((v: string) => v === kind).length !== 3) || !vector(r.puzzleOrder, bank.length, v => integer(v, 0, bank.length - 1)) || new Set(r.puzzleOrder).size !== bank.length) throw new Error('問題の記録が不正です。');
     if (!relicList(r.inventory) || !relicList(r.pool) || !rewardList(r.rewards) || !r.inventory.every((id: string) => r.pool.includes(id)) || (r.phase === 'reward' && r.rewards.length !== 3)) throw new Error('遺物の記録が不正です。');
-    if (needsEndgameMigration) {
-      // Extend only the new always-unlocked relics. Never alter an existing roll
-      // or the combat/board/reward random stream during migration.
-      for (const id of ['duality', 'quint', 'sept']) if (!r.pool.includes(id)) r.pool.push(id);
-    }
+    // Retired growth is inert. Preserve old oversized inventories without
+    // silently converting active relics into archived ones during loading.
+    if (r.stowedRelics !== undefined && (!record(r.stowedRelics) || !Object.entries(r.stowedRelics).every(([id, value]) =>
+      relics.has(id) && r.pool.includes(id) && !r.inventory.includes(id) && record(value) && Object.keys(value).length === 3
+      && integer(value.level, 1, 10) && integer(value.rank, 1, primeIds.includes(id as RelicId) ? 3 : 1)
+      && integer(value.tier, 1, 3) && (value.tier !== 3 || value.level >= 5)))) throw new Error('手放した遺物の成長記録が不正です。');
     if (!integer(r.freeSkillTokens, 0, relicValues(r as Run, 'quint').primeValue || 1) || (r.freeSkillTokens > 0 && !r.inventory.includes('quint'))
       || !integer(r.reservedAuto, 0, relicValues(r as Run, 'sept').primeValue) || (r.reservedAuto > 0 && !r.inventory.includes('sept'))
       || !record(r.boons) || Object.keys(r.boons).length !== 2 || !integer(r.boons.defense, 0, 5) || !integer(r.boons.magic, 0, 5)) throw new Error('祝福と予約の記録が不正です。');
@@ -96,6 +97,10 @@ export function parseSaveData(data: unknown): Save {
     if ((r.phase === 'battle' && (!r.hp || !r.enemyHp || !r.cells.includes(0))) || (r.phase === 'lost' && r.hp !== 0) || (r.phase === 'won' && r.stage !== 5) || ((r.phase === 'won' || r.phase === 'reward') && (r.enemyHp !== 0 || r.cells.includes(0)))) throw new Error('冒険の進行が不正です。');
     if (r.lastReport !== null) validateReport(r as Run);
     validateContributions(r as Run);
+    // Expand only after validating the original pool and its committed rewards.
+    // Preserve pool order and existing/pending offers; only future rolls expand.
+    // Appending consumes no combat/board/reward randomness.
+    for (const { id } of RELICS) if (!r.pool.includes(id)) r.pool.push(id);
   }
   if (data.meta.bestKills === undefined) data.meta.bestKills = Math.max(data.meta.wins ? 6 : 0, r?.stats.kills ?? 0);
   if (data.history !== undefined) {
@@ -135,10 +140,18 @@ function validateReport(run: Run): void {
   const originalClearVictory = r.balanceVersion === 1 && r.stage <= 5 && p.fullClear && p.defeated && !p.sweep.length
     && ['segments', 'sheetsCompleted', 'levelsGained', 'spellLevelBefore', 'spellLevelAfter', 'maxHpGained', 'baseDamage', 'guaranteedDamage', 'clearBonus'].every(key => p[key] === undefined)
     && p.path.every((event: any) => event.sheet === undefined);
+  const relicHealed = p.relicHealed ?? 0;
+  const hpAfterCounter = Math.max(0, p.hpBefore + relicHealed - p.received);
+  const expectedRelicHealing = r.relicBalanceVersion === 1 && !p.skill && p.units > 0
+    ? Math.min(r.maxHp - (p.maxHpGained ?? 0) - p.hpBefore, relicValues(run, 'gold').completionHeal) : 0;
+  if ((p.relicHealed !== undefined && !integer(p.relicHealed, 0, 7)) || relicHealed !== expectedRelicHealing
+    || relicHealed > p.healed || relicHealed > r.maxHp - (p.maxHpGained ?? 0) - p.hpBefore
+    || (relicHealed > 0 && (r.relicBalanceVersion !== 1 || p.skill || !r.inventory.includes('gold') || p.units < 1))
+    || (hpAfterCounter === 0 && (p.healed !== relicHealed || (p.levelsGained ?? 0) !== 0))) fail('遺物の回復記録が不正です。');
   if (p.hpBefore < 1 || p.hpBefore > r.maxHp - (p.maxHpGained ?? 0) || p.enemyBefore < 1
     || p.defeated !== (p.damage >= p.enemyBefore || originalClearVictory) || p.defeated !== (r.phase === 'reward' || r.phase === 'won')
     || r.enemyHp !== (originalClearVictory ? 0 : Math.max(0, p.enemyBefore - p.damage))
-    || r.hp !== Math.min(r.maxHp, Math.max(0, p.hpBefore - p.received) + p.healed)
+    || r.hp !== Math.min(r.maxHp, hpAfterCounter + p.healed - relicHealed)
     || p.attackScore !== Math.floor(p.damage * (relicValues(r as Run, 'gold').scoreMultiplier))) fail('詠唱の決着記録が不正です。');
   if (p.path[0].source !== 'root' || p.path.slice(1).some((e: any) => e.source === 'root')
     || p.path.filter((e: any) => e.source === 'echo').length > relicValues(r as Run, 'echo').echoes
@@ -211,6 +224,8 @@ function validateReport(run: Run): void {
     || (p.maxHpGained !== undefined && (!integer(p.maxHpGained) || p.maxHpGained !== p.levelsGained * 4))
     || (p.spellLevelBefore !== undefined && !integer(p.spellLevelBefore, 1, 1000000))
     || (p.spellLevelAfter !== undefined && (p.spellLevelAfter !== r.spellLevel || p.spellLevelAfter !== p.spellLevelBefore + p.levelsGained))) fail('成長の記録が不正です。');
+  if (p.relicHealed !== undefined && p.levelsGained !== undefined
+    && p.healed !== relicHealed + Math.min(r.maxHp - hpAfterCounter, p.levelsGained * 10)) fail('回復と成長の記録が不正です。');
   if (['guaranteedDamage', 'baseDamage', 'clearBonus', 'manaOverflow', 'manaRestored'].some(key => p[key] !== undefined && !integer(p[key], 0, key === 'manaOverflow' || key === 'manaRestored' ? 8 : Number.MAX_SAFE_INTEGER))
     || (p.guaranteedDamage !== undefined && p.guaranteedDamage > p.damage)
     || (p.manaRestored !== undefined && p.manaRestored > 0 && (!p.skill || p.freeSkill || !r.inventory.includes('battery')))
@@ -280,7 +295,9 @@ function validateReport(run: Run): void {
 }
 const effectFields = ['heldCasts','opportunities','triggers','damage','addedInputs','fuelGranted','fuelUsed','mana','prevented','tokensGranted','tokensUsed','score'];
 function validEffectMap(value: unknown): boolean {
-  return record(value) && Object.entries(value).every(([id,item]) => RELICS.some(relic => relic.id === id) && record(item) && effectFields.every(key => integer(item[key])) && Object.keys(item).length === effectFields.length);
+  return record(value) && Object.entries(value).every(([id,item]) => RELICS.some(relic => relic.id === id) && record(item)
+    && effectFields.every(key => integer(item[key])) && (item.healed === undefined || integer(item.healed))
+    && Object.keys(item).every(key => effectFields.includes(key) || key === 'healed'));
 }
 function validateContributions(run: Run): void {
   const h = run.contributions;

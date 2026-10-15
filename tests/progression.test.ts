@@ -12,6 +12,7 @@ function fixture(seed = 71, character: CharacterId = 'fuse'): Save {
 
 /** Reconstruct the pre-expansion rules explicitly for compatibility assertions. */
 function legacyRun(run: Run): Run {
+  delete run.relicBalanceVersion; delete run.stowedRelics;
   delete run.expansionVersion; delete run.enemyRulesVersion; delete run.skillLevels;
   delete run.equippedSkills; delete run.relicLevels; delete run.rewardStep;
   delete run.pendingRelicRewards; delete run.contributions;
@@ -66,9 +67,9 @@ describe('cell-level Stroke and stored battery overflow', () => {
     const run = boardWith([0, 40, 80]); run.inventory = ['battery']; run.mana = 7;
     const charged = resolveAction(run, play(run, 0));
     expect(charged.lastReport!.path).toHaveLength(1);
-    expect(charged).toMatchObject({ mana: 8, manaOverflow: 2 });
+    expect(charged).toMatchObject({ mana: 8, manaOverflow: 1 });
     const used = resolveAction(charged, play(charged, 40, true));
-    expect(used).toMatchObject({ mana: 2, manaOverflow: 0 });
+    expect(used).toMatchObject({ mana: 1, manaOverflow: 0 });
     expect(used.lastReport!.charge).toBe(0);
     expect(used.lastReport!.path).toHaveLength(1);
   });

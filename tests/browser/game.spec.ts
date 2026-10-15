@@ -32,7 +32,6 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     const { dispatch, newSave, startRun } = await import(/* @vite-ignore */ enginePath);
     const { singles } = await import(/* @vite-ignore */ sudokuPath);
     let save = startRun(newSave(), 'fuse', 21);
-    save.run.pool = save.run.pool.filter((id: string) => id !== 'trinity');
     save.meta.tutorialDone = true;
     save.settings.reducedMotion = true;
     for (let encounter = 0; encounter < 5; encounter++) {
@@ -77,11 +76,20 @@ test('desktop: title, prediction, restoration, seventh encounter and a loss resu
     const { singles } = await import(/* @vite-ignore */ sudokuPath);
     const save = JSON.parse(localStorage.getItem(key)!);
     save.run.hp = 1; save.run.turn = 2; save.run.spellLevel = 1;
-    // Keep the real encounter-8 attack. Use a short-chain spell and remove Ward
-    // so this focused loss fixture does not block every root with accumulated guard.
-    save.run.inventory = save.run.inventory.filter((id: string) => id !== 'ward');
-    delete save.run.acquisitionRank.ward; delete save.run.tier.ward; delete save.run.relicLevels.ward;
+    // Keep the real encounter-8 attack and the fully available reward pool.
+    // Use an unequipped short cast for this focused HP-zero/result fixture.
+    if (save.run.inventory.includes('glass')) save.run.maxHp += 8;
+    save.run.inventory = []; save.run.acquisitionRank = {}; save.run.tier = {}; save.run.relicLevels = {};
+    save.run.afterglow = false; save.run.freeSkillTokens = 0; save.run.reservedAuto = 0; save.run.manaOverflow = 0;
     for (const cell of singles(save.run.cells)) {
+      // A new reward sequence can produce a board where every short route hits
+      // a shield. Keep three marks of each kind, with shields off this route.
+      const route = new Set(previewAction(save.run, cell).path.map((event: { cell: number }) => event.cell));
+      const other = save.run.cells.flatMap((value: number, index: number) => !value && !route.has(index) ? [index] : []);
+      if (other.length < 6) continue;
+      save.run.marks.fill(null);
+      other.slice(0, 3).forEach((index: number) => { save.run.marks[index] = 'shield'; });
+      other.slice(3, 6).forEach((index: number) => { save.run.marks[index] = 'weak'; });
       const report = previewAction(save.run, cell);
       if (!report.defeated && !report.fullClear && report.received > 0) {
         localStorage.setItem(key, JSON.stringify(save));

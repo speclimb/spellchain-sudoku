@@ -28,18 +28,19 @@ describe('standard longest-origin guidance', () => {
 });
 
 describe('weakness lens tier damage', () => {
-  it('keeps ordinary levels unchanged and adds 12/24 for upper/apex tiers', () => {
+  it('scales weak and aimed-root damage independently while preserving versionless upper values', () => {
     const run = startRun(newSave(), 'fuse', 51).run!;
     expect(relicValues(run, 'lens').weakDamage).toBe(8);
     run.inventory = ['lens'];
     for (let lv = 1; lv <= 10; lv++) for (let tier = 1; tier <= 3; tier++) {
       run.relicLevels = { lens: lv }; run.tier.lens = tier;
-      const damage = 20 + (lv - 1) * 4 + (tier - 1) * 12;
+      const damage = 16 + (lv - 1) * 2 + (tier - 1) * 4;
       expect(relicValues(run, 'lens').weakDamage).toBe(damage);
+      expect(relicValues(run, 'lens').weakRootDamage).toBe(8 + Math.floor((lv - 1) / 2) + (tier - 1) * 4);
       expect(relicGrowthDescription(run, 'lens')).toContain(`追加ダメージ${damage}`);
       expect(relicGrowthDescription(run, 'lens')).not.toContain('★');
     }
-    delete run.expansionVersion; run.tier.lens = 2;
+    delete run.expansionVersion; delete run.relicBalanceVersion; run.tier.lens = 2;
     expect(relicValues(run, 'lens').weakDamage).toBe(32);
     expect(relicDescription('lens', run)).toContain('32');
     expect(rewardOf('greater:lens', run).description).toContain('32');
