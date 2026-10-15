@@ -43,7 +43,7 @@ describe('weakness lens tier damage', () => {
     delete run.expansionVersion; delete run.relicBalanceVersion; run.tier.lens = 2;
     expect(relicValues(run, 'lens').weakDamage).toBe(32);
     expect(relicDescription('lens', run)).toContain('32');
-    expect(rewardOf('greater:lens', run).description).toContain('32');
+    expect(rewardOf('greater:lens', run).description).toContain('追加ダメージ20');
   });
   it('agrees across preview, actual damage, contribution and persisted history at every tier', () => {
     for (const tier of [1, 2, 3]) {

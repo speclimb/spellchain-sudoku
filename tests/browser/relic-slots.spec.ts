@@ -98,7 +98,7 @@ test('old ten-relic inventory stays intact and owned upgrades use no exchange', 
   await page.setViewportSize({ width: 390, height: 844 });
   const before = await prepare(page, { legacy: true }), dialog = rewardDialog(page);
   await expect(dialog.locator('.reward-slots')).toContainText('10 / 10');
-  await expect(dialog.locator('.reward-balance-note')).toContainText('次の戦闘から新しい遺物バランス');
+  await expect(dialog.locator('.reward-balance-note')).toContainText('次の戦闘から遺物の効果を現在のルールに合わせます');
   await dialog.locator('[data-reward="lens"]').click(); await expect(dialog.locator('[data-replace]')).toHaveCount(10);
   await dialog.locator('[data-action="reward-back"]').click();
   await dialog.locator('[data-reward="pen"]').click(); await savedText(page);

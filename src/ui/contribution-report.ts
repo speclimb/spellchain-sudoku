@@ -27,29 +27,29 @@ export function contributionSummary(run: Run, bossOnly = false): BattleLedger & 
 
 export function effectRows(metric: EffectMetric): { label: string; value: string }[] {
   const rows: { label: string; value: string }[] = [];
-  if (metric.damage) rows.push({ label: '同経路・発揮ダメージ差（超過含む）', value: `＋${fmt(metric.damage)}` });
+  if (metric.damage) rows.push({ label: '同じ連鎖で増えたダメージ（超過含む）', value: `＋${fmt(metric.damage)}` });
   if (metric.fuelGranted || metric.fuelUsed) {
-    rows.push({ label: '自動入力の付与 / 使用', value: `${fmt(metric.fuelGranted)} / ${fmt(metric.fuelUsed)}回` });
+    rows.push({ label: '連鎖詠唱数の追加 / 消費', value: `${fmt(metric.fuelGranted)} / ${fmt(metric.fuelUsed)}` });
   }
-  if (metric.addedInputs) rows.push({ label: '無料で直接入力したマス', value: `${fmt(metric.addedInputs)}マス` });
+  if (metric.addedInputs) rows.push({ label: '連鎖詠唱数を消費しない入力', value: `${fmt(metric.addedInputs)}マス` });
   if (metric.mana) rows.push({ label: '追加の魔力', value: `＋${fmt(metric.mana)}` });
   if (metric.healed) rows.push({ label: '反撃前に回復したHP', value: `＋${fmt(metric.healed)}` });
   if (metric.prevented) rows.push({ label: '防いだHPダメージ', value: fmt(metric.prevented) });
-  if (metric.tokensGranted || metric.tokensUsed) rows.push({ label: '無料券の獲得 / 使用', value: `${fmt(metric.tokensGranted)} / ${fmt(metric.tokensUsed)}回` });
+  if (metric.tokensGranted || metric.tokensUsed) rows.push({ label: '詠唱符の獲得 / 使用', value: `${fmt(metric.tokensGranted)} / ${fmt(metric.tokensUsed)}枚` });
   if (metric.score) rows.push({ label: '追加スコア', value: `＋${fmt(metric.score)}` });
   return rows;
 }
 
 function activity(metric: EffectMetric): { priority: number; amount: number; text: string } {
   // Priorities choose a readable sample, never combine unlike units into a score.
-  if (metric.damage) return { priority: 6, amount: metric.damage, text: `発揮ダメージ差 ＋${fmt(metric.damage)}` };
-  if (metric.addedInputs || metric.fuelUsed) return { priority: 5, amount: metric.addedInputs || metric.fuelUsed, text: metric.addedInputs ? `無料で${fmt(metric.addedInputs)}マス直接入力` : `自動入力を${fmt(metric.fuelUsed)}回使用` };
+  if (metric.damage) return { priority: 6, amount: metric.damage, text: `同じ連鎖で増えたダメージ ＋${fmt(metric.damage)}` };
+  if (metric.addedInputs || metric.fuelUsed) return { priority: 5, amount: metric.addedInputs || metric.fuelUsed, text: metric.addedInputs ? `連鎖詠唱数を消費せず${fmt(metric.addedInputs)}マス入力` : `連鎖詠唱数を${fmt(metric.fuelUsed)}消費` };
   if (metric.prevented) return { priority: 4, amount: metric.prevented, text: `HPダメージを${fmt(metric.prevented)}防御` };
   if (metric.healed) return { priority: 4, amount: metric.healed, text: `反撃前にHPを${fmt(metric.healed)}回復` };
-  if (metric.tokensUsed || metric.tokensGranted) return { priority: 3, amount: metric.tokensUsed || metric.tokensGranted, text: `無料券 ${fmt(metric.tokensGranted)}回獲得 / ${fmt(metric.tokensUsed)}回使用` };
+  if (metric.tokensUsed || metric.tokensGranted) return { priority: 3, amount: metric.tokensUsed || metric.tokensGranted, text: `詠唱符 ${fmt(metric.tokensGranted)}枚獲得 / ${fmt(metric.tokensUsed)}枚使用` };
   if (metric.mana) return { priority: 2, amount: metric.mana, text: `追加の魔力 ＋${fmt(metric.mana)}` };
   if (metric.score) return { priority: 1, amount: metric.score, text: `追加スコア ＋${fmt(metric.score)}` };
-  if (metric.fuelGranted) return { priority: 0, amount: metric.fuelGranted, text: `自動入力を${fmt(metric.fuelGranted)}回付与` };
+  if (metric.fuelGranted) return { priority: 0, amount: metric.fuelGranted, text: `連鎖詠唱数＋${fmt(metric.fuelGranted)}` };
   return { priority: -1, amount: 0, text: metric.opportunities ? 'この期間の効果は未発動' : 'この期間は発動機会なし' };
 }
 
@@ -66,21 +66,21 @@ export function contributionReport(run: Run, bossOnly = false): string {
   const relicIds = [...new Set([...run.inventory, ...entries.map(entry => entry.id)])];
   return `<section class="contribution-report" aria-label="戦いの記録" data-window="${bossOnly ? 'boss' : 'recent'}">
     <div class="contribution-heading"><div><span class="micro">SPELL RECORD</span><h3>育てた力の、働き。</h3></div><div class="report-window" role="group" aria-label="記録の対象"><button data-report-window="recent" aria-pressed="${!bossOnly}">直近5戦</button><button data-report-window="boss" aria-pressed="${bossOnly}">このボス戦</button></div></div>
-    <p class="report-sample">${total.battles}戦・${fmt(total.casts)}詠唱を集計${history?.partial ? ' · 旧保存からの再開後のみ' : ''}${total.casts < 10 ? ' · 少数サンプル' : ''}</p>
+    <p class="report-sample">${total.battles}戦・${fmt(total.casts)}詠唱を集計${history?.partial ? ' · 記録開始後の詠唱のみ' : ''}${total.casts < 10 ? ' · 記録が少ないため参考値' : ''}</p>
     <div class="report-totals"><div><span>HPに与えたダメージ</span><strong>${fmt(total.hpDamage)}</strong></div><div><span>超過ダメージ</span><strong>${fmt(total.overkill)}</strong></div><div><span>獲得スコア</span><strong>${fmt(total.score)}</strong></div></div>
-    ${highlights.length ? `<ul class="report-highlights" aria-label="主な働き">${highlights.map(({ id, activity: value }) => `<li><span class="highlight-symbol">${relicOf(id).symbol}</span><span><b>${esc(relicOf(id).name)}</b><small>${esc(value.text)}</small></span></li>`).join('')}</ul>` : `<p class="report-empty">${total.casts ? '記録された効果はまだありません。発動機会と所持中の詠唱数も、詳細で確認できます。' : '計測は次の詠唱から始まります。以前の戦いの数値は推定しません。'}</p>`}
-    <p class="report-caution">ダメージ差は超過分を含みます。遺物の発揮ダメージ差は「同じ経路から、その効果だけを外した差」です。効果が重なるため足し合わせず、100%の配分や強さの順位とは見ません。軽減量も効果を1つ外した差なので重なりがあり、合計しません。</p>
+    ${highlights.length ? `<ul class="report-highlights" aria-label="主な働き">${highlights.map(({ id, activity: value }) => `<li><span class="highlight-symbol">${relicOf(id).symbol}</span><span><b>${esc(relicOf(id).name)}</b><small>${esc(value.text)}</small></span></li>`).join('')}</ul>` : `<p class="report-empty">${total.casts ? '記録された効果はまだありません。発動機会と所持中の詠唱数も、詳細で確認できます。' : '次の詠唱から記録します。記録開始前の戦いは含まれません。'}</p>`}
+    <p class="report-caution">遺物で増えたダメージは、同じ連鎖でその遺物の効果がなかった場合との差です。敵の残りHPを超えた分も含みます。複数の効果が重なるため、各遺物の数値を足しても全体のダメージにはなりません。防いだHPダメージも同じ方法で比べているため、合計できません。</p>
     <details class="contribution-details"><summary>すべての働きと、次の成長を見る <span>${skills.length}術式 / ${relicIds.length}遺物</span></summary>
       <h4>スキルの実績</h4><p class="report-explainer">そのスキルを装備して使用した詠唱全体の実績です。術師・遺物などの効果と超過分を含み、スキル単体が増やしたダメージではありません。通常詠唱は含みません。</p>
       <div class="contribution-items">${skills.map(id => {
         const item = skillOf(id), metric = total.skills[id], level = skillLevel(run, id);
         return `<article class="contribution-item" data-skill-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>Lv.${level}</small></h5><b>${metric?.uses ?? 0}回使用</b></div>${metric?.uses ? metricList([{ label: '発揮ダメージ', value: fmt(metric.damage) }, { label: '1回あたりの平均', value: fmt(Math.round(metric.damage / metric.uses * 10) / 10) }, { label: '敵HP / 超過', value: `${fmt(metric.hpDamage)} / ${fmt(metric.overkill)}` }]) : '<p class="report-no-opportunity">この期間は未使用。弱いという意味ではありません。</p>'}<p class="report-next"><b>次の成長</b>${esc(skillNextDescription(run, id))}</p></article>`;
       }).join('')}</div>
-      <h4>遺物の実績</h4><p class="report-explainer">自動入力は付与順で使用を記録。経路全体をその遺物の成果とは数えません。付与・使用回数と無料の直接入力は別の指標です。発動率は機会の数とあわせて見てください。</p>
+      <h4>遺物の実績</h4><p class="report-explainer">連鎖詠唱数は追加された順に消費し、どの遺物の分を使ったか記録します。追加された数・消費した数と、連鎖詠唱数を消費しない入力は分けて表示します。発動率は機会の数とあわせて見てください。</p>
       <div class="contribution-items">${relicIds.map(id => {
         const item = relicOf(id), metric = total.relics[id], rows = metric ? effectRows(metric) : [], held = run.inventory.includes(id), stowed = run.stowedRelics?.[id];
         const rank = held ? `Lv.${relicLevel(run, id)} · ${relicTierLabel(run, id)}` : stowed ? `保管中 · Lv.${stowed.level} · ${['通常', '上位', '極位'][stowed.tier - 1]}` : '手放した遺物';
-        return `<article class="contribution-item" data-relic-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>${esc(rank)}</small></h5></div><p class="effect-opportunities">所持中 ${metric?.heldCasts ?? 0}詠唱 · 機会 ${metric?.opportunities ?? 0}回 · 発動 ${metric?.triggers ?? 0}回${(metric?.opportunities ?? 0) < 10 ? ' · 少数サンプル' : ''}</p>${rows.length ? metricList(rows) : `<p class="report-no-opportunity">${!metric?.heldCasts ? 'この期間の所持中データはありません。' : !metric.opportunities ? '発動機会なし。効果が弱いという意味ではありません。' : '発動機会はありましたが、数値効果は記録されませんでした。'}</p>`}${held ? `<p class="report-next"><b>次の成長</b>${esc(relicNextDescription(run, id))}</p>` : `<p class="report-next">${stowed ? '報酬で再取得すると、保存したレベル・段階へ戻ります。' : '現在は所持していません。この期間に発揮した効果を表示しています。'}</p>`}</article>`;
+        return `<article class="contribution-item" data-relic-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>${esc(rank)}</small></h5></div><p class="effect-opportunities">所持中 ${metric?.heldCasts ?? 0}詠唱 · 機会 ${metric?.opportunities ?? 0}回 · 発動 ${metric?.triggers ?? 0}回${(metric?.opportunities ?? 0) < 10 ? ' · 記録が少ないため参考値' : ''}</p>${rows.length ? metricList(rows) : `<p class="report-no-opportunity">${!metric?.heldCasts ? 'この期間に所持していた記録はありません。' : !metric.opportunities ? '発動機会なし。効果が弱いという意味ではありません。' : '発動機会はありましたが、効果による数値の変化は記録されませんでした。'}</p>`}${held ? `<p class="report-next"><b>次の成長</b>${esc(relicNextDescription(run, id))}</p>` : `<p class="report-next">${stowed ? '報酬で再取得すると、保存したレベル・段階へ戻ります。' : '現在は所持していません。この期間に発揮した効果を表示しています。'}</p>`}</article>`;
       }).join('') || '<p class="report-empty">遺物を手に入れると、ここに記録されます。</p>'}</div>
       <p class="report-explainer">総ダメージ ${fmt(total.damage)} = 敵HP ${fmt(total.hpDamage)} + 超過 ${fmt(total.overkill)}。スコアは別集計です。記録開始は通算${fmt((history?.sinceCast ?? run.castCounter) + 1)}詠唱目から。</p>
     </details>

@@ -137,8 +137,8 @@ test('level growth adds eight automatic fills and a real thirteen-link cast stay
   expect(fixture.capacity).toBe(12);
   expect(fixture.report.chain!.bonuses).toContainEqual({ label: '術式成長', amount: 8 });
   await expect(page.locator('.spell-growth')).toContainText('術式 Lv.9');
-  await expect(page.locator('.spell-growth')).toContainText(/自動\s*[＋+]\s*8/);
-  await expect(page.locator('.skill-description')).toContainText('自動12回');
+  await expect(page.locator('.spell-growth')).toContainText(/連鎖詠唱数\s*[＋+]\s*8/);
+  await expect(page.locator('.skill-description')).toContainText('連鎖詠唱数12');
   await expect(page.locator('#prediction-chain')).toHaveText('13');
   await page.screenshot({ path: '.runtime/screenshots/desktop-high-level.png', fullPage: false });
   await page.evaluate(() => {

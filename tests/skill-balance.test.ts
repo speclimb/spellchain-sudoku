@@ -113,7 +113,9 @@ describe('situational follow-ups require real, bounded target conditions', () =>
     expect(before.extraDamage).toBe(0);
     const enough = niche('lumen', 10, 'bridge'), after = previewAction(enough, 2, true, 'bridge');
     expect(after.path.map(event => event.cell)).toEqual([2, 13, 14, 16]);
-    expect(after.extraDamage).toBe(Math.floor(after.baseDamage! * skillValues(enough, 'bridge').situationalAttack));
+    // Only the three recovered inputs, excluding the isolated opening cell.
+    expect(after.extraDamage).toBe(318647);
+    expect(after.extraDamage!).toBeLessThan(after.baseDamage! * skillValues(enough, 'bridge').situationalAttack);
   });
 
   it('Pierce needs a weak origin and at least two actually filled weak marks', () => {

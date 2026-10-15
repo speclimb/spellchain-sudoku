@@ -126,7 +126,7 @@ function measureSheet(source: Run, root: number, fuel: number, rekindled: boolea
 function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId): CastPlan {
   const chosen = selectedSkill(source, skill, requested), values = chosen ? skillValues(source, chosen) : null;
   if (source.phase !== 'battle' || !Number.isInteger(cell) || cell < 0 || cell >= 81 || source.cells[cell]) throw new Error('空きマスを選んでください。');
-  if (skill ? !canUseSkill(source) : candidates(source.cells, cell).length !== 1) throw new Error(skill ? '魔力か無料スキルが必要です。' : '数字が確定したマスを選んでください。');
+  if (skill ? !canUseSkill(source) : candidates(source.cells, cell).length !== 1) throw new Error(skill ? '魔力8、または詠唱符1枚が必要です。' : '数字が確定したマスを選んでください。');
   const run = structuredClone(source), has = (id: RelicId) => run.inventory.includes(id), boardRandom = new Random(source.randomState);
   const bonuses = chainBonuses(run, skill, chosen);
   const metrics = effectMetrics(source), without: CastPlan['without'] = {};
@@ -144,6 +144,10 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   const multiplierFor = (glass: number, amplifier: number) => spellMultiplier(source.spellLevel) * (run.relicBalanceVersion ? glass + amplifier - 1 : glass * amplifier) * (values?.damageMultiplier ?? 1);
   const multiplier = multiplierFor(glassMultiplier, amplifierMultiplier);
   const completionMultiplier = values?.completionMultiplier ?? 1;
+  // Bridge rewards only the first three recovered inputs, once per cast.
+  // Keep this window across sheets; later reconnects never restart it.
+  let bridgeStart = -1, bridgeRaw = 0;
+  const bridgeRawWithout: Partial<Record<RelicId, number>> = {};
   const path: FillEvent[] = [], segments: SheetSegment[] = [];
   let segment: SheetSegment, initiallySingle: boolean[];
   const beginSegment = () => {
@@ -196,12 +200,16 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     const echoDamage = kind === 'echo' ? relicValues(run, 'echo').echoDamage : 0;
     const amount = (base + completion + weak + echoDamage) * stroke;
     rawDamage += amount;
+    if (bridge && bridgeStart < 0) bridgeStart = path.length - 1;
+    const bridgeWindow = bridgeStart >= 0 && path.length - bridgeStart <= 3;
+    if (bridgeWindow) bridgeRaw += amount;
     for (const id of damageRelics) if (has(id)) {
       const removed = id === 'pen' ? units.length * relicValues(run,id).completion * completionMultiplier * stroke
         : id === 'lens' && run.marks[target] === 'weak' ? (weak - 8) * stroke
         : id === 'stroke' ? amount - (base + completion + weak + echoDamage)
         : id === 'echo' ? echoDamage * stroke : 0;
       rawWithout[id] = (rawWithout[id] ?? 0) + amount - removed;
+      if (bridgeWindow) bridgeRawWithout[id] = (bridgeRawWithout[id] ?? 0) + amount - removed;
     }
     if (kind === 'echo' && metrics.echo) { metrics.echo.addedInputs++; metrics.echo.triggers++; }
     if (units.length && metrics.pen) { metrics.pen.opportunities += units.length; metrics.pen.triggers += units.length; }
@@ -275,13 +283,22 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   const focused = (shield: number) => chosen === 'bridge' ? firstBridge >= 0 && path.length - firstBridge >= 3
     : chosen === 'pierce' ? path[0].mark === 'weak' && weakCount >= 2 && weakCount * 4 >= path.length
     : chosen === 'bastion' && path[0].mark === 'shield' && shield >= 12;
-  const extraAttack = (base: number, shield: number, opening: number) => Math.floor(
+  // Round the three-input subtotal once, before applying its follow-up rate.
+  // Sheet-clear bonuses and Trinity are deliberately absent from this subtotal.
+  const bridgeDamage = Math.floor(bridgeRaw * multiplier);
+  const extraAttack = (base: number, shield: number, opening: number, localBridgeBase = bridgeDamage) => Math.floor(
     ((values?.weakAttack ?? 0) * weakCount + (weakCount >= 3 ? values?.weakBurst ?? 0 : 0) + shield * (values?.shieldAttack ?? 0)) * spellMultiplier(source.spellLevel)
-    + (focused(opening) ? base * (values?.situationalAttack ?? 0) : 0));
+    + (focused(opening) ? (chosen === 'bridge' ? localBridgeBase : base) * (values?.situationalAttack ?? 0) : 0));
   const extraDamage = extraAttack(baseDamage, maxShield, openingShield);
   // Attribution removes a relic from this same path. Its contribution includes
   // the follow-up fed by its ordinary damage, or Ward's opening guard condition.
-  for (const lower of Object.values(without)) if (lower) lower.extra = extraAttack(lower.base, maxShield, openingShield);
+  for (const id of damageRelics) {
+    const lower = without[id];
+    if (!lower) continue;
+    const withoutMultiplier = multiplierFor(id === 'glass' ? 1 : glassMultiplier, id === 'amplifier' ? 1 : amplifierMultiplier);
+    const localBridgeBase = Math.floor((bridgeRawWithout[id] ?? bridgeRaw) * withoutMultiplier);
+    lower.extra = extraAttack(lower.base, maxShield, openingShield, localBridgeBase);
+  }
   if (metrics.ward && values?.shieldAttack) {
     const openingWard = UNITS.filter(unit => unit.some(target => !source.givens[target]) && unit.every(target => source.cells[target])).length * relicValues(source, 'ward').ward;
     without.ward = { base: baseDamage, clear: clearBonus, extra: extraAttack(baseDamage, maxShield - wardShield, openingShield - openingWard) };
@@ -410,7 +427,7 @@ export function resolveAction(source: Run, action: Action): Run {
   const random = new Random(run.randomState);
   if (action.type === 'equip') {
     if (run.phase !== 'reward' || !run.expansionVersion || action.skills.length > 2 || new Set(action.skills).size !== action.skills.length
-      || action.skills.some(id => !['bridge', 'pierce', 'bastion'].includes(id) || !run.skillLevels?.[id])) throw new Error('スキルの付け替えは戦闘の間に、所有済みの追加スキル2つまでです。');
+      || action.skills.some(id => !['bridge', 'pierce', 'bastion'].includes(id) || !run.skillLevels?.[id])) throw new Error('追加スキルは報酬画面で、習得済みのものを2つまで装備できます。');
     run.equippedSkills = [...action.skills];
   } else if (action.type === 'reward') {
     if (run.phase !== 'reward' || !run.rewards.includes(action.relic) || !canTakeReward(run, action.relic)) throw new Error('この報酬は選べません。');

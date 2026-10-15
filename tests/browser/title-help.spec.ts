@@ -37,7 +37,7 @@ test('first title help is read-only, keyboard accessible and returns focus befor
   await expect(helpDialog(page)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'かんたんな遊び方' })).toBeVisible();
   await expect(helpDialog(page).locator('.help-steps > li')).toHaveCount(5);
-  await expect(helpDialog(page)).toContainText('魔力8か無料券');
+  await expect(helpDialog(page)).toContainText('魔力8または詠唱符1枚');
   await expect(helpDialog(page)).toContainText('同じ行・列・3×3区画');
   await expect(page.locator('.app-shell')).toHaveAttribute('inert', '');
   await expect(helpDialog(page).getByRole('button', { name: '閉じる', exact: true })).toBeFocused();

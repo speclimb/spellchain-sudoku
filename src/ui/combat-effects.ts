@@ -125,7 +125,7 @@ export class CombatEffects {
     this.position();
     this.host.dataset.sheet = String(segment.sheet);
     this.host.dataset.oneCast = String(segment.oneCastClear);
-    this.phase(segment.oneCastClear ? 'one-cast' : 'sheet', segment.oneCastClear ? '一詠全成！' : 'シート完成！', `シート ${segment.sheet} · ${segment.pathEnd - segment.pathStart}マス`, `完成加算 ＋${fmt(segment.clearBonus)}${continues ? ' · 余った回数で次のシートへ' : ''}`);
+    this.phase(segment.oneCastClear ? 'one-cast' : 'sheet', segment.oneCastClear ? '一詠全成！' : 'シート完成！', `シート ${segment.sheet} · ${segment.pathEnd - segment.pathStart}マス`, `完成加算 ＋${fmt(segment.clearBonus)}${continues ? ' · 残り連鎖詠唱数で次のシートへ' : ''}`);
     if (this.settings.sound) { if (segment.oneCastClear) this.audio.oneCastClear(); else this.audio.sheetClear(); }
     await pause(this.duration(segment.oneCastClear ? 420 : 220));
   }
@@ -138,7 +138,7 @@ export class CombatEffects {
     const enemy = enemyForRun(before), intent = enemyIntent(before);
     if (report.oneCastClear && !report.segments?.length) {
       this.position();
-      this.phase('one-cast', '一詠全成！', `${report.path.length}マスを、一度の詠唱で。`, `基礎攻撃 ${fmt(report.baseDamage ?? report.damage)} · 完成加算 ＋${fmt(report.clearBonus ?? 0)}`);
+      this.phase('one-cast', '一詠全成！', `${report.path.length}マスを、一度の詠唱で。`, `通常攻撃 ${fmt(report.baseDamage ?? report.damage)} · 完成加算 ＋${fmt(report.clearBonus ?? 0)}`);
       if (this.settings.sound) this.audio.oneCastClear();
       await pause(this.duration(620));
     }
@@ -200,7 +200,7 @@ export class CombatEffects {
     if (this.skipped) return;
     if ((report.levelsGained ?? 0) > 0) {
       const chainGained = chainBonus(after.spellLevel) - chainBonus(report.spellLevelBefore ?? before.spellLevel);
-      this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 自動連鎖 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 成長回復 +${report.healed - (report.relicHealed ?? 0)}`);
+      this.phase('growth', '術式レベルアップ！', `Lv.${after.spellLevel}`, `攻撃 ×${spellMultiplier(after.spellLevel).toFixed(1)} · 連鎖詠唱数 +${chainGained} · 最大HP +${report.maxHpGained ?? 0} · 成長回復 +${report.healed - (report.relicHealed ?? 0)}`);
       if (this.settings.sound) this.audio.growth();
       await pause(this.duration(340));
     }

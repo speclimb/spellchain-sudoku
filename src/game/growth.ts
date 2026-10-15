@@ -4,10 +4,10 @@ export const MAX_GROWTH_LEVEL = 10;
 export const MAX_EQUIPPED_SKILLS = 2;
 export interface SkillDefinition { id: SkillId; name: string; symbol: string; kind: string; description: string }
 export const SKILLS: SkillDefinition[] = [
-  { id: 'fuse', name: '星火連環', symbol: '✦', kind: '連鎖', description: '自動入力を増やし、成長すると同じ数字へ飛び火する。' },
+  { id: 'fuse', name: '星火連環', symbol: '✦', kind: '連鎖', description: '連鎖詠唱数＋4。' },
   { id: 'scribe', name: '大紋章の詠唱', symbol: '◇', kind: '完成', description: '行・列・区画の完成ダメージを増幅する。' },
   { id: 'lumen', name: '月光解放', symbol: '☾', kind: '攻撃', description: 'この詠唱の通常攻撃ダメージを増幅する。' },
-  { id: 'bridge', name: '連星渡り', symbol: '↝', kind: '連鎖', description: '最も近い確定マスへ再接続。その先で3マス以上埋めると強力な追撃。' },
+  { id: 'bridge', name: '連星渡り', symbol: '↝', kind: '連鎖', description: '最も近い確定マスへ再接続。再接続先を含む3マス分の通常攻撃で追撃。' },
   { id: 'pierce', name: '貫星弾', symbol: '⌖', kind: '弱点', description: '弱点ごとに追加攻撃。弱点から始め、少ない入力で弱点を集中して突くと強力な追撃。' },
   { id: 'bastion', name: '護星砲', symbol: '⬡', kind: '守護', description: '守護に応じた追加攻撃。守護を蓄え、守護マスから始めると強力な追撃。' },
 ];
@@ -48,12 +48,13 @@ export function skillValues(run: SkillRun, id: SkillId): SkillValues {
   if (id === 'bridge' || id === 'pierce' || id === 'bastion') result.situationalAttack = [3, 4, 4.3, 4.6, 5, 5.3, 5.6, 5.9, 6.2, 7][index];
   return result;
 }
-export function relicLevel(run: Run, id: RelicId): number {
+export type RelicRun = Pick<Run, 'inventory' | 'acquisitionRank' | 'tier'> & Partial<Pick<Run, 'expansionVersion' | 'relicLevels' | 'relicBalanceVersion'>>;
+export function relicLevel(run: RelicRun, id: RelicId): number {
   if (!run.inventory.includes(id)) return 0;
   return run.expansionVersion ? level(run.relicLevels?.[id], run.acquisitionRank[id] ?? 1) : 1;
 }
-export function relicTierLevel(run: Run, id: RelicId): number { return Math.max(1, Math.min(run.expansionVersion ? 3 : 2, Math.floor(run.tier[id] ?? 1))); }
-export const relicTierLabel = (run: Run, id: RelicId): string => ['通常', '上位', '極位'][relicTierLevel(run, id) - 1];
+export function relicTierLevel(run: RelicRun, id: RelicId): number { return Math.max(1, Math.min(run.expansionVersion ? 3 : 2, Math.floor(run.tier[id] ?? 1))); }
+export const relicTierLabel = (run: RelicRun, id: RelicId): string => ['通常', '上位', '極位'][relicTierLevel(run, id) - 1];
 export interface RelicValues {
   level: number; tier: number; auto: number; echoes: number; echoDamage: number; rekindleAuto: number;
   completion: number; ward: number; strokeCells: number; strokeMultiplier: number; charge: number; overflow: number;
@@ -61,7 +62,7 @@ export interface RelicValues {
   chance: number; primeValue: number; carry: boolean; weakRootDamage: number; completionHeal: number;
 }
 /** One replacement value per effect: tier and level never reapply an old multiplier. */
-export function relicValues(run: Run, id: RelicId): RelicValues {
+export function relicValues(run: RelicRun, id: RelicId): RelicValues {
   const lv = relicLevel(run, id), tier = relicTierLevel(run, id), n = run.expansionVersion ? Math.max(0, lv - 1) : 0, t = tier - 1;
   const result: RelicValues = { level: lv, tier, auto: 0, echoes: 0, echoDamage: 0, rekindleAuto: 0, completion: 0, ward: 0,
     strokeCells: 0, strokeMultiplier: 1, charge: 0, overflow: 0, skillMultiplier: 1, afterglowAuto: 0, weakDamage: 8,
@@ -112,14 +113,14 @@ const percent = (value: number): string => `${numberText(value * 100)}％`;
 export function skillDescriptionFor(run: SkillRun, id: SkillId): string {
   const value = skillValues(run, id);
   if (!value.level) return `未習得。${skillOf(id).description}`;
-  const opening = '任意の空きマスから始動。';
-  if (id === 'fuse') return `${opening}自動入力＋${value.auto}。${value.fuseHops ? `接続が途切れると残り自動入力を1回使い、直前と同じ数字へ最大${value.fuseHops}回飛び火。` : 'Lv.2で同じ数字への飛び火を習得。'}`;
-  if (id === 'scribe') return `${opening}完成ダメージ${numberText(value.completionMultiplier)}倍。`;
+  const opening = '任意の空きマスから詠唱。';
+  if (id === 'fuse') return `${opening}連鎖詠唱数＋${value.auto}。${value.fuseHops ? `接続が途切れると残り連鎖詠唱数を1消費し、直前と同じ数字へ最大${value.fuseHops}回飛び火。` : ''}`;
+  if (id === 'scribe') return `${opening}行・列・区画の完成ダメージ${numberText(value.completionMultiplier)}倍。`;
   if (id === 'lumen') return `${opening}通常攻撃ダメージ${numberText(value.damageMultiplier)}倍。`;
   const followUp = `通常攻撃の${numberText(value.situationalAttack)}倍を1回追撃。追撃に三の護符・シート完成加算は重ならない。`;
-  if (id === 'bridge') return `${opening}自動入力＋${value.auto}。接続が途切れると残り自動入力を1回使い、最も近い確定マスへ最大${value.reconnects}回再接続（同距離は上→左）。最初の再接続先から3マス以上埋めると、${followUp}`;
-  if (id === 'pierce') return `${opening}弱点から始め、弱点2マス以上かつ全入力の4分の1以上が弱点なら、${followUp}別途、弱点1マスごとに${value.weakAttack}×術式倍率の追加攻撃。${value.weakBurst ? `弱点3マス以上でさらに${value.weakBurst}×術式倍率。` : 'Lv.5で弱点3マスの追加攻撃を習得。'}`;
-  return `${opening}詠唱前のシート守護が12以上で、守護マスから始めると、${followUp}別途、詠唱中の最大シート守護×${numberText(value.shieldAttack)}×術式倍率の追加攻撃（複数シートは合算しない）。${value.temporaryShield ? `この手だけ守護＋${value.temporaryShield}（蓄積条件には含めない）。` : 'Lv.5で一時守護を習得。'}`;
+  if (id === 'bridge') return `${opening}${value.auto ? `連鎖詠唱数＋${value.auto}。` : ''}接続が途切れると残り連鎖詠唱数を1消費し、最も近い確定マスへ最大${value.reconnects}回再接続（同距離は上→左）。最初の再接続先を含む3マスを埋めると、その3マス分の通常攻撃の${numberText(value.situationalAttack)}倍を1回追撃。三の護符・シート完成加算は追撃の対象外。`;
+  if (id === 'pierce') return `${opening}弱点から始め、弱点2マス以上かつ全入力の4分の1以上が弱点なら、${followUp}別途、弱点1マスごとに${value.weakAttack}×術式倍率の追加攻撃。${value.weakBurst ? `弱点3マス以上でさらに${value.weakBurst}×術式倍率。` : ''}`;
+  return `${opening}詠唱前のシート守護が12以上で、守護マスから始めると、${followUp}別途、${value.temporaryShield ? '（詠唱中の最大シート守護＋一時守護）' : '詠唱中の最大シート守護'}×${numberText(value.shieldAttack)}×術式倍率の追加攻撃（複数シートは合算しない）。${value.temporaryShield ? `この詠唱だけ守護＋${value.temporaryShield}（追加攻撃と反撃軽減に適用。発動条件の守護12には含めない）。` : ''}`;
 }
 export function skillNextDescription(run: SkillRun, id: SkillId): string {
   const lv = skillLevel(run, id);
@@ -127,34 +128,34 @@ export function skillNextDescription(run: SkillRun, id: SkillId): string {
   const next = { ...run, expansionVersion: 1 as const, skillLevels: { ...run.skillLevels, [id]: lv + 1 } };
   return `次：Lv.${lv + 1}${lv + 1 === 5 || lv + 1 === 10 ? '・進化' : ''}。${skillDescriptionFor(next, id)}`;
 }
-export function relicGrowthDescription(run: Run, id: RelicId): string {
+export function relicGrowthDescription(run: RelicRun, id: RelicId): string {
   const v = relicValues(run, id);
   if (!v.level) return '未所持。';
-  if (id === 'wick') return `自動入力＋${v.auto}。${v.carry ? 'シート完成時、残り回数で次のシートへ連鎖（始動も1回消費）。' : '上位でシート間の連鎖を解放。'}`;
-  if (id === 'echo') return `起点と同じ数字へ最大${v.echoes}回、無料で飛び火。飛び火1マスごとに基本ダメージ＋${v.echoDamage}。`;
-  if (id === 'rekindle') return `詠唱全体で最初の行・列・区画完成時、自動入力＋${v.rekindleAuto}。1回だけ。`;
+  if (id === 'wick') return `連鎖詠唱数＋${v.auto}。${v.carry ? 'シート完成時、残り連鎖詠唱数で次のシートへ続く（次の起点も1消費）。' : ''}`;
+  if (id === 'echo') return `起点の入力後、同じ数字の空きマスへ最大${v.echoes}回飛び火。連鎖詠唱数は消費しない。${v.echoDamage ? `飛び火1マスにつき基本ダメージ＋${v.echoDamage}。` : ''}`;
+  if (id === 'rekindle') return `詠唱全体で最初の行・列・区画完成時、連鎖詠唱数＋${v.rekindleAuto}（1詠唱に1回）。`;
   if (id === 'pen') return `行・列・区画の完成ダメージ＋${v.completion}／単位。`;
-  if (id === 'ward') return `完成1単位につきシート守護＋${v.ward}。同じシートの反撃に毎手適用。`;
-  if (id === 'stroke') return `最初の${v.strokeCells}マスの基本・完成・弱点ダメージを${numberText(v.strokeMultiplier)}倍。旧倍率と重複しない。`;
-  if (id === 'battery') return `通常詠唱の魔力＋${v.charge}。超過分を${v.overflow}まで蓄え、有料スキル直後に戻す。無料券を先に使い魔力を温存。`;
-  if (id === 'amplifier') return run.relicBalanceVersion ? `スキル詠唱の通常攻撃ダメージ＋${percent(v.skillMultiplier - 1)}。硝子の杖の加算率と合算。` : `スキル詠唱の通常攻撃ダメージを${numberText(v.skillMultiplier)}倍。`;
-  if (id === 'afterglow') return `スキル使用後、次の通常詠唱だけ自動入力＋${v.afterglowAuto}。戦闘を越えて保持。`;
-  if (id === 'lens') return `弱点マスの追加ダメージ${v.weakDamage}。${v.weakRootDamage ? `弱点を起点にすると、起点だけさらに＋${v.weakRootDamage}。` : v.tier === 1 ? '上位でさらに＋12、極位で通常より＋24。' : v.tier === 2 ? '通常より＋12。極位でさらに＋12。' : '通常より＋24。'}弱点を埋めるたびに有効。`;
-  if (id === 'glass') return `${run.relicBalanceVersion ? `通常攻撃ダメージ＋${percent(v.damageMultiplier - 1)}（増幅器と加算率を合算）` : `通常攻撃ダメージ${numberText(v.damageMultiplier)}倍`}。所持中は最大HP−8（強化では再減少しない）。`;
+  if (id === 'ward') return `完成1単位につきシート守護＋${v.ward}。同じシートの反撃を毎回軽減。`;
+  if (id === 'stroke') return `最初の${v.strokeCells}マスの基本・完成・弱点ダメージを${numberText(v.strokeMultiplier)}倍。`;
+  if (id === 'battery') return `通常詠唱で得る魔力＋${v.charge}。魔力8を超えた分を${v.overflow}まで蓄え、魔力を消費するスキルの詠唱後に戻す。詠唱符の使用時は魔力・蓄電を温存。`;
+  if (id === 'amplifier') return run.relicBalanceVersion ? `スキル詠唱の通常攻撃ダメージ＋${percent(v.skillMultiplier - 1)}。硝子の杖と加算。詠唱符の使用時も有効。` : `スキル詠唱の通常攻撃ダメージ${numberText(v.skillMultiplier)}倍。詠唱符の使用時も有効。`;
+  if (id === 'afterglow') return `スキル使用後、次の通常詠唱だけ連鎖詠唱数＋${v.afterglowAuto}。戦闘を越えて持ち越す。重ねて加算しない。`;
+  if (id === 'lens') return `弱点1マスにつき追加ダメージ${v.weakDamage}。${v.weakRootDamage ? `弱点を起点にすると、そのマスだけさらに＋${v.weakRootDamage}。` : ''}`;
+  if (id === 'glass') return `${run.relicBalanceVersion ? `通常攻撃ダメージ＋${percent(v.damageMultiplier - 1)}（魔力増幅器と加算）` : `通常攻撃ダメージ${numberText(v.damageMultiplier)}倍`}。所持中は最大HP−8（強化では再減少しない）。`;
   if (id === 'gold') return `攻撃由来の得点${numberText(v.scoreMultiplier)}倍。${v.completionHeal ? `通常詠唱で行・列・区画を完成すると、反撃前にHP${v.completionHeal}回復（1詠唱に1回）。` : '攻撃ダメージと撃破固定500点は変えない。'}`;
   const digit = { duality: 2, trinity: 3, quint: 5, sept: 7 }[id as 'duality' | 'trinity' | 'quint' | 'sept'];
   const prefix = `数字「${digit}」を埋めた詠唱ごとに1回、${percent(v.chance)}で`;
-  if (id === 'trinity') return `${prefix}通常攻撃${numberText(v.primeValue)}倍。完成加算・追加攻撃は増幅しない。旧倍率と重複しない。`;
+  if (id === 'trinity') return `${prefix}通常攻撃${numberText(v.primeValue)}倍。シート完成加算・スキルの追加攻撃は対象外。`;
   if (id === 'duality') return `${prefix}守護を引いた後の反撃を${percent(v.primeValue)}軽減。祝福との合計上限60％。`;
-  if (id === 'quint') return `${prefix}無料スキル券${v.primeValue}枚（所持上限${v.primeValue}枚、最大3枚）。券所持中・無料スキル中は抽選しない。`;
-  return `${prefix}次の詠唱へ自動入力＋${v.primeValue}を予約。予約は1件で、重ねて加算しない。`;
+  if (id === 'quint') return `${prefix}詠唱符${v.primeValue}枚を獲得（所持上限${v.primeValue}枚）。1枚でスキルを詠唱し、魔力・蓄電を温存。所持中・使用した詠唱では発動しない。`;
+  return `${prefix}次の詠唱へ連鎖詠唱数＋${v.primeValue}を予約。予約は1件で、重ねて加算しない。`;
 }
 export function relicNextDescription(run: Run, id: RelicId): string {
   const lv = relicLevel(run, id), tier = relicTierLevel(run, id);
   const tierHint = tier >= 3 ? '極位に到達。' : `ボスで${tier === 1 ? '上位' : 'Lv.5以降に極位'}へ進化可能。`;
   if (lv >= 10) return `Lv.10・最大レベル。${tierHint}`;
   const next = structuredClone(run);
-  next.expansionVersion = 1; next.relicLevels = { ...next.relicLevels, [id]: lv + 1 };
+  next.expansionVersion = 1; next.relicBalanceVersion = 1; next.relicLevels = { ...next.relicLevels, [id]: lv + 1 };
   if (!next.inventory.includes(id)) next.inventory.push(id);
   if (['duality', 'trinity', 'quint', 'sept'].includes(id)) next.acquisitionRank[id] = Math.min(3, (run.acquisitionRank[id] ?? (lv ? 1 : 0)) + 1);
   return `次：Lv.${lv + 1}。${relicGrowthDescription(next, id)} ${tierHint}`;

@@ -5,7 +5,7 @@ const fmt = (value: number): string => value.toLocaleString('ja-JP');
 export const rangeText = (minimum: number, maximum = minimum): string => minimum === maximum ? fmt(minimum) : `${fmt(minimum)}〜${fmt(maximum)}`;
 export const procName = (id: PrimeRelicId): string => ({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[id];
 export function procEffect(id: PrimeRelicId, value: number): string {
-  return id === 'trinity' ? `基礎攻撃 ×${value}` : id === 'duality' ? `守護後の反撃を${percentText(value)}%軽減（祝福と合計60%まで）` : id === 'quint' ? `無料スキル ＋${value}回（次の手から）` : `次の手の自動入力 ＋${value}回`;
+  return id === 'trinity' ? `通常攻撃 ×${value}（シート完成加算・スキル追加攻撃は対象外）` : id === 'duality' ? `守護後の反撃を${percentText(value)}%軽減（祝福と合計60%まで）` : id === 'quint' ? `詠唱符 ＋${value}枚（次の詠唱から使用可能）` : `次の詠唱の連鎖詠唱数 ＋${value}`;
 }
 
 /** Preview wording is derived only from guaranteed bounds, never from a proc roll. */
@@ -46,7 +46,7 @@ export function accessiblePrediction(report: Preview): string {
 }
 export function damageBreakdown(report: Preview, preview = false): { label: string; value: string }[] {
   if (report.baseDamage === undefined) return [];
-  const rows = [{ label: '基礎攻撃', value: fmt(report.baseDamage) }];
+  const rows = [{ label: '通常攻撃（護符の倍率前）', value: fmt(report.baseDamage) }];
   if (preview && report.forecast) {
     if (report.forecast.procs?.length) {
       for (const proc of report.forecast.procs) rows.push({ label: `${procName(proc.id)}（${percentText(proc.chance)}%）`, value: procEffect(proc.id, proc.value) });

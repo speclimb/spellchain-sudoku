@@ -169,9 +169,9 @@ describe('two separate deterministic boss reward pools', () => {
   });
   it('describes current→next effects and milestones', () => {
     const run = fixture(); run.skillLevels!.bridge = 4;
-    expect(rewardOf('skill:bridge', run).name).toContain('4→5'); expect(rewardOf('skill:bridge', run).description).toContain('→');
+    expect(rewardOf('skill:bridge', run).name).toContain('4→5'); expect(rewardOf('skill:bridge', run).description).toContain('選択後：');
     run.rewardStep = 'relic'; own(run, 'lens', 5, 2);
-    expect(rewardOf('apex:lens', run).name).toContain('極位'); expect(rewardOf('lens', run).description).toContain('→');
+    expect(rewardOf('apex:lens', run).name).toContain('極位'); expect(rewardOf('lens', run).description).toContain('選択後：');
     expect(rewardOf('lens', run).name).toContain('5→6');
     expect(skillNextDescription(run, 'bridge')).toContain('進化');
   });

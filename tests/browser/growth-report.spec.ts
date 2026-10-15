@@ -113,7 +113,7 @@ test('mobile report offers three highlights then detailed separate metrics and a
   await expect(report.locator('.report-totals')).toContainText('HPに与えたダメージ');
   await expect(report.locator('.report-totals')).toContainText('超過ダメージ');
   await expect(report.locator('.report-totals')).toContainText('獲得スコア');
-  await expect(report.locator('.report-caution')).toContainText('足し合わせず');
+  await expect(report.locator('.report-caution')).toContainText('数値を足しても全体のダメージにはなりません');
   await expect(report.locator('.contribution-details')).not.toHaveAttribute('open');
   await page.locator('[data-report-window="boss"]').click();
   await expect(report.locator('.report-sample')).toContainText('1戦');

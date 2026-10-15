@@ -27,17 +27,17 @@ describe('contribution report presentation', () => {
   it('keeps fuel, inputs, mana, prevention, coupons and score in separate units', () => {
     const rows = effectRows(metric({ damage: 80, fuelGranted: 14, fuelUsed: 4, addedInputs: 4, mana: 3, prevented: 9, tokensGranted: 2, tokensUsed: 1, score: 40 }));
     expect(rows).toEqual([
-      { label: '同経路・発揮ダメージ差（超過含む）', value: '＋80' },
-      { label: '自動入力の付与 / 使用', value: '14 / 4回' },
-      { label: '無料で直接入力したマス', value: '4マス' },
+      { label: '同じ連鎖で増えたダメージ（超過含む）', value: '＋80' },
+      { label: '連鎖詠唱数の追加 / 消費', value: '14 / 4' },
+      { label: '連鎖詠唱数を消費しない入力', value: '4マス' },
       { label: '追加の魔力', value: '＋3' },
       { label: '防いだHPダメージ', value: '9' },
-      { label: '無料券の獲得 / 使用', value: '2 / 1回' },
+      { label: '詠唱符の獲得 / 使用', value: '2 / 1枚' },
       { label: '追加スコア', value: '＋40' },
     ]);
   });
   it('does not imply reserved fuel directly filled cells', () => {
-    expect(effectRows(metric({ fuelGranted: 14, fuelUsed: 3 }))).toEqual([{ label: '自動入力の付与 / 使用', value: '14 / 3回' }]);
+    expect(effectRows(metric({ fuelGranted: 14, fuelUsed: 3 }))).toEqual([{ label: '連鎖詠唱数の追加 / 消費', value: '14 / 3' }]);
   });
   it('keeps old metrics without healing and the past healing of retired relics readable', () => {
     const run = startRun(newSave(), 'fuse', 3).run!;
@@ -67,12 +67,12 @@ describe('contribution report presentation', () => {
     run.skillLevels = { fuse: 1, bridge: 2 }; run.equippedSkills = [];
     run.contributions = { sinceCast: 7, partial: true, battles: [battle(4)] };
     const html = contributionReport(run);
-    expect(html).toContain('旧保存からの再開後のみ');
-    expect(html).toContain('少数サンプル');
-    expect(html).toContain('効果が重なるため足し合わせず');
+    expect(html).toContain('記録開始後の詠唱のみ');
+    expect(html).toContain('記録が少ないため参考値');
+    expect(html).toContain('効果が重なるため、各遺物の数値を足しても全体のダメージにはなりません');
     expect(html).toContain('この期間は未使用。弱いという意味ではありません。');
     expect(html).toContain('所持中 2詠唱 · 機会 1回 · 発動 1回');
-    expect(html).toContain('この期間の所持中データはありません。');
+    expect(html).toContain('この期間に所持していた記録はありません。');
     expect(html).toContain('次の成長');
     expect(html).toContain('1回あたりの平均');
     expect(html).toContain('効果と超過分を含み');

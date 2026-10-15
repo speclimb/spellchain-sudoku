@@ -5,7 +5,7 @@ import type { Report, Run, SkillId } from '../../src/game/types';
 const key = 'chain-incantation.save.v1';
 type ExtraSkill = Extract<SkillId, 'bridge' | 'pierce' | 'bastion'>;
 const conditions: Record<ExtraSkill, string> = {
-  bridge: '最初の再接続先から3マス以上埋めると',
+  bridge: '最初の再接続先を含む3マスを埋めると',
   pierce: '弱点から始め、弱点2マス以上かつ全入力の4分の1以上が弱点なら',
   bastion: '詠唱前のシート守護が12以上で、守護マスから始めると',
 };
@@ -77,8 +77,16 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 
       await page.locator(`[data-cell="${fixture.cell}"]`).click();
       await expect(page.locator('#prediction-damage')).toHaveText(fixture.report.damage.toLocaleString('ja-JP'));
       await expect(page.locator('[data-action="cast"]')).toBeEnabled();
-      // These fixtures exercise the new specialty bonus, beyond the fixed extra attack.
-      expect(fixture.report.extraDamage).toBeGreaterThanOrEqual(fixture.report.baseDamage! * 5);
+      // Bridge rewards only its first three recovered inputs. These fixtures
+      // have no relics and spell level 1, so the local subtotal is exact here.
+      if (skillId === 'bridge') {
+        const first = fixture.report.path.findIndex(event => event.bridge);
+        const recovered = fixture.report.path.slice(first, first + 3);
+        expect(recovered).toHaveLength(3);
+        const local = recovered.reduce((sum, event) => sum + Math.min(80, 10 + (event.ordinal - 1) * 2)
+          + event.units.length * 20 + (event.mark === 'weak' ? 8 : 0), 0);
+        expect(fixture.report.extraDamage).toBe(local * 5);
+      } else expect(fixture.report.extraDamage).toBeGreaterThanOrEqual(fixture.report.baseDamage! * 5);
       expect((await savedGame(page)).run).toEqual(before);
       await page.evaluate(() => scrollTo(0, 0));
       await unobstructedLayout(page, viewport.name === 'mobile');

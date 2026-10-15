@@ -57,7 +57,7 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
     await expect(page.locator('[data-root="legal"]')).toHaveCount(fixture.blanks);
     await page.locator(`[data-cell="${fixture.cell}"]`).click();
     await expect(page.locator('[data-root="legal"]')).toHaveCount(fixture.blanks - 1);
-    await expect(page.locator('.prediction-detail')).toContainText('無料スキル1回を優先使用');
+    await expect(page.locator('.prediction-detail')).toContainText('詠唱符1枚を優先使用');
     await alternative.click(); await expect(alternative).toHaveAttribute('data-root', 'selected');
     expect(await saved(page)).toEqual(withToken);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -175,12 +175,12 @@ test('free tokens take priority over full mana, and reserved fuel plus five-enco
     localStorage.setItem(key, JSON.stringify(save)); return { cell, expected };
   }, key);
   await resume(page);
-  await expect(page.locator('.free-skill-tokens')).toContainText('2回');
-  await expect(page.locator('.reserved-auto')).toContainText('自動＋7回');
+  await expect(page.locator('.free-skill-tokens')).toContainText('2枚');
+  await expect(page.locator('.reserved-auto')).toContainText('連鎖詠唱数＋7');
   await expect(page.locator('.defense-boon')).toContainText('残り3戦');
   await expect(page.locator('.magic-boon')).toContainText('残り5戦');
   await page.locator('[data-action="skill"]').click(); await page.locator(`[data-cell="${fixture.cell}"]`).click();
-  await expect(page.locator('.prediction-detail')).toContainText('魔力を温存');
+  await expect(page.locator('.prediction-detail')).toContainText('魔力・蓄電の消費なし');
   await expect(page.locator('.chance-forecast [data-proc="quint"]')).toHaveCount(0);
   await page.screenshot({ path: '.runtime/screenshots/endgame-tokens-reserve-boons.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
