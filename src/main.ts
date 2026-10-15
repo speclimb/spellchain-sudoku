@@ -1,4 +1,5 @@
 import './style.css';
+import './ui/readability.css';
 import { CHARACTERS, RELICS, characterOf, relicOf, rewardOf, relicDescription } from './game/content';
 import { canUseSkill, chainBonus, dispatch, incomingAttack, legalOrigins, longestOrigins, newSave, previewAction, sheetShield, spellMultiplier, startRun } from './game/engine';
 import { enemyAt, enemyForRun, enemyIntent } from './game/enemies';
@@ -50,6 +51,7 @@ let saving = false, saveBlocked = false;
 const persistNow = async () => {
   saving = true; app.setAttribute('aria-busy', 'true');
   const controls = [...app.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)')];
+  const focusedControl = controls.find(control => control === document.activeElement);
   for (const control of controls) control.disabled = true;
   try {
     const result = await storage.persist(save);
@@ -58,6 +60,7 @@ const persistNow = async () => {
   } finally {
     saving = false; app.setAttribute('aria-busy', 'false');
     for (const control of controls) if (control.isConnected) control.disabled = false;
+    if (focusedControl?.isConnected && document.activeElement === document.body) focusedControl.focus({ preventScroll: true });
   }
 };
 
@@ -227,7 +230,7 @@ function modalBody(): string | null {
   if (modal === 'history') return playHistory(save.history, historyView);
   if (modal === 'quick-help') return quickHelp();
   if (modal === 'help') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">HOW TO PLAY</div><h2>数字をつなぎ、魔法を紡ぐ。</h2><ol class="help-steps"><li><strong>青緑の数字から、起点を選ぶ</strong><p>候補が1つのマスに○と細い枠がつきます。連鎖の予告線の中でも、○のマスへ起点を選び直せます。●は選択中、金色の数字と線はその連鎖の予告です。★は、現在の通常・スキルで最長の連鎖になるすべての起点です。冒険の最初から表示されます。</p></li><li><strong>予告を見比べて、詠唱する</strong><p>「連鎖のしくみ」で1マスずつ確認できます。直前に埋めたマスと同じ行・列・3×3区画にある確定マスへ進みます。最初から確定していたマスも対象です。縦の距離＋横の距離が近い順、同距離なら上の行・左の列を優先します。</p></li><li><strong>術式が育つほど、連鎖も長くなる</strong><p>Lv.1の導火術師は起点1＋自動4で最大5連鎖。レベルが1上がるたび、自動入力がさらに1回増えます。たとえば術式Lv.10・固有スキルLv.1なら、通常最大14連鎖、スキルで最大18連鎖。残り回数が0か、直前のマスからつながる確定マスがなくなると終了。1マス埋まるたびに候補を計算し直します。遺物で回数や飛び先が増えることもあります。</p></li><li><strong>完成・弱点・盾を狙う</strong><p>行・列の完成は光の奔流、3×3区画の完成は魔法陣のカットインと追加攻撃。シート完成時は、この一手で埋めた割合に応じて基礎攻撃の最大25%を加算。初期の空きマスを一度で埋め切る「一詠全成」が最大の完成加算です。✧は弱点、◇は守護＋6。守護は同じシートの間ずっと蓄積し、毎回の反撃を軽減します。残り数マスになっても消えません。敵が生き残ると、連鎖の後に反撃します。</p></li><li><strong>魔力8、または無料券でスキル</strong><p>未確定の空きマスからも始動できます。通常詠唱は埋めた1マスにつき魔力＋1、マス由来の充電は1詠唱最大5です。蓄光術師・蓄電石の追加分はこの上限とは別に加算します。無料スキルの回数があるときは先に使い、魔力を温存します。無料回数がなければ魔力8を消費し、スキルの手は充電されません。固有スキルと追加2枠から、1詠唱に1つだけ選べます。魔力8と無料券はすべてのスキルで共通です。追加スキルの装備変更は報酬画面で行い、外しても所持とレベルは残ります。遺物の${RELIC_CAPACITY}枠とは別の装備枠です。スキルはLv.10まで成長し、Lv.5・10で進化します。蓄電石の余剰魔力は、有料スキルの発動後に引き継ぎます。</p></li><li><strong>シートを重ね、どこまでも連戦</strong><p>上位・長い導火線があると、シート完成時に自動入力回数が残っていれば次のシートへ連鎖を続けます。新しいシートの最初の入力も自動入力1回を使います。攻撃と敵の反撃は全シートの連鎖が終わってから1回だけ。守護はシートごとに0に戻り、反撃にはこの詠唱中に得た最も高いシート守護を使います。シート完成と敵撃破で術式レベルが1ずつ上がり、自動入力＋1回、攻撃倍率＋0.2、最大HP＋4、HPを最大10回復。敵撃破で残りの盤面を一掃し、3択で新しい力を選びます。基本は遺物3択で、回復や修練がときどき候補に加わります。5戦ごとにボスが登場し、スキルを選ぶ1/2、遺物を選ぶ2/2の順に、両方の報酬を受け取れます。選択は段階ごとに保存されます。遺物は全${RELICS.length}種が最初の冒険から報酬候補に入り、${RELIC_CAPACITY}枠まで同時に使えます。満杯で新しい遺物を選ぶと、効果を比較して1つと入れ替えます。外した遺物のレベル・取得回数・段階はこの冒険中は保存され、報酬で再取得するとその状態へ戻ります（再取得だけではレベルは上がりません）。蓄電や無料券、次の詠唱への予約効果は外すと消えます。所持遺物の強化・進化は枠を使いません。遺物はLv.10まで育ち、通常・上位・極位の段階はレベルと別に成長します。二・三・五・七の護符は、最初の3回で発動確率が30%、45%、60%と育ち、その後もレベルに応じて成長します。二は反撃軽減、三は攻撃倍率、五は無料スキル、七は次の手の自動入力を予約します。無料スキルの所持中・使用中は五の護符を抽選しないため、無料回数はそのまま使い切れます。それぞれの数字を含む連鎖で、各護符を詠唱確定時に1回抽選。確定ダメージと発動時ダメージを分けて予告します。遺物が出尽くしても修練・最大HP強化・5戦の祝福などの選択が続きます。祝福は再取得すると残り5戦に更新され、重複しません。HPが尽きるまで連戦は続き、一掃はシート完成の成長・得点・充電の対象外です。</p></li></ol><p class="help-note">時間制限はありません。PCでは矢印キーでマスを移動し、Enterで選択できます。入力は「詠唱する」で確定します。</p>`;
-  if (modal === 'settings') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">PREFERENCES</div><h2>詠唱のひとときを整える。</h2><div class="settings-list">${[{ key: 'sound', name: '効果音', text: '操作・魔法・打撃・防御・成長を異なる音で演出します。' }, { key: 'fast', name: '演出を短く', text: '連鎖・魔法カットイン・反撃・シート切替を短縮します。' }, { key: 'reducedMotion', name: '動きを抑える', text: '揺れや閃光を止め、攻撃と成長を文字で表示します。' }].map(s => `<label><span><strong>${s.name}</strong><small>${s.text}</small></span><input type="checkbox" data-setting="${s.key}" ${save.settings[s.key as keyof typeof save.settings] ? 'checked' : ''}></label>`).join('')}</div><p class="help-note">進行はこのブラウザに自動保存されます。別の端末とは共有されません。サイトデータを削除すると記録も消えます。</p><p class="help-note">効果音素材：Kenney / JaggedStone（CC0）。<a href="./audio-licenses/CREDITS.txt" target="_blank" rel="noopener">出典とライセンス</a></p>`;
+  if (modal === 'settings') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">PREFERENCES</div><h2>詠唱のひとときを整える。</h2><div class="settings-list">${[{ key: 'largeText', name: '文字を大きく', text: '説明文とPCの操作表示を、標準よりさらに大きくします。' }, { key: 'sound', name: '効果音', text: '操作・魔法・打撃・防御・成長を異なる音で演出します。' }, { key: 'fast', name: '演出を短く', text: '連鎖・魔法カットイン・反撃・シート切替を短縮します。' }, { key: 'reducedMotion', name: '動きを抑える', text: '揺れや閃光を止め、攻撃と成長を文字で表示します。' }].map(s => `<label><span><strong>${s.name}</strong><small>${s.text}</small></span><input type="checkbox" data-setting="${s.key}" ${save.settings[s.key as keyof typeof save.settings] ? 'checked' : ''}></label>`).join('')}</div><p class="help-note">進行はこのブラウザに自動保存されます。別の端末とは共有されません。サイトデータを削除すると記録も消えます。</p><p class="help-note">効果音素材：Kenney / JaggedStone（CC0）。<a href="./audio-licenses/CREDITS.txt" target="_blank" rel="noopener">出典とライセンス</a></p>`;
   if (modal === 'codex') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">THE RELIC ARCHIVE</div><h2>詠唱を育てる、${RELICS.length}の遺物。</h2><p class="modal-intro">全${RELICS.length}種が最初の冒険から報酬候補に入ります。同時に使えるのは${RELIC_CAPACITY}枠。選んで集め、各遺物をLv.10まで育て、通常・上位・極位へ進化させられます。</p><div class="codex-grid">${RELICS.map(r => `<article class="codex-item"><span>${r.symbol}</span><div><small>${r.kind}</small><h3>${r.name}</h3><p>${esc(relicGrowthDescription({ ...demoRun, inventory: [r.id], relicLevels: { [r.id]: 1 }, acquisitionRank: {}, tier: {} }, r.id))}</p><b class="unlocked">最初から報酬候補</b></div></article>`).join('')}</div>`;
   if (modal === 'restart') return `<div class="modal-eyebrow">A NEW JOURNEY</div><h2>新しい冒険をはじめますか？</h2><p class="modal-intro">今の冒険の進行は置き換わります。これまでの戦績と解放した要素は残ります。プレイ履歴は保存上限の範囲で残ります。</p><div class="dialog-actions"><button class="secondary" data-action="close">戻る</button><button class="primary" data-action="restart">新しい冒険をはじめる ↗</button></div>`;
   if (view === 'battle' && save.run?.phase === 'reward') return reward(save.run);
@@ -251,6 +254,7 @@ function render(displayRun = save.run): void {
   // history tree or discard its nested pagination/focus while it is being read.
   const keepHistoryDialog = !busy && modal === 'history' && sameModal ? oldDialog : null;
   const body = busy ? null : keepHistoryDialog ? ' ' : modalBody();
+  document.documentElement.classList.toggle('large-text', !!save.settings.largeText);
   document.documentElement.classList.toggle('reduced-motion', save.settings.reducedMotion || matchMedia('(prefers-reduced-motion: reduce)').matches);
   app.innerHTML = `<div class="app-shell" ${body ? 'inert' : ''}>${header()}${warning && !body ? `<div class="warning" role="alert">${esc(warning)}</div>` : ''}<main>${view === 'battle' && displayRun ? battle(displayRun) : home()}</main></div><div id="modal-layer">${body ? `<div class="modal-backdrop"><section class="modal ${modal === 'quick-help' ? 'quick-help' : ''} ${modal === 'history' ? 'history-modal' : ''} ${modal === 'codex' ? 'wide' : ''} ${!modal && save.run?.phase === 'reward' ? 'reward-modal' : ''}" role="dialog" data-modal-kind="${modal ?? save.run?.phase ?? ''}" data-reward-step="${save.run?.rewardStep ?? ''}" data-pending-reward="${pendingReward ?? ''}" aria-modal="true" aria-label="${modal === 'history' ? 'プレイ履歴' : modal === 'codex' ? '遺物図鑑' : modal === 'settings' ? '設定' : modal === 'help' || modal === 'quick-help' ? '遊び方' : modal === 'restart' ? '新しい冒険' : save.run?.phase === 'reward' ? '成長の選択' : '冒険の結果'}" tabindex="-1">${warning ? `<div class="warning" role="alert">${esc(warning)}</div>` : ''}${body}</section></div>` : ''}</div><div class="sr-only" aria-live="polite">${busy ? '連鎖を詠唱しています' : prediction ? `${esc(accessiblePrediction(prediction))}` : ''}</div>`;
   if (keepHistoryDialog) app.querySelector('[role="dialog"]')?.replaceWith(keepHistoryDialog);
@@ -458,6 +462,7 @@ app.addEventListener('change', async event => {
   if (element.dataset.setting === 'sound') setSound(element.checked);
   else {
     save.settings[element.dataset.setting as keyof typeof save.settings] = element.checked;
+    document.documentElement.classList.toggle('large-text', !!save.settings.largeText);
     if (save.settings.sound) { audio.unlock(); audio.ui('select'); }
     await persistNow();
     if (warning) render();

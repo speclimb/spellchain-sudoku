@@ -1,0 +1,189 @@
+/* Readable Japanese UI on small physical displays, including full-HD laptops.
+   Keep typography independent of canvas scaling and preserve browser text zoom. */
+:root {
+  --text-body: 1rem;
+  --text-label: .875rem;
+  --text-heading: 1.125rem;
+  --muted: #adbcd0;
+}
+:root.large-text { font-size: 112.5%; }
+
+/* Reading surfaces also benefit on touch devices; long content scrolls vertically. */
+.modal { width: min(48rem, 100%); line-height: 1.8; }
+.modal.wide, .modal.reward-modal { width: min(68rem, 100%); }
+.modal.history-modal { width: min(58rem, 100%); }
+.modal h2 { font-size: 1.75rem; }
+.modal h3, .modal h4, .modal h5, .modal h6 { margin-block-end: .5em; }
+.modal .primary, .modal .secondary, .modal .text-button,
+.modal .help-steps strong, .modal .quick-help-flow,
+.modal .settings-list strong, .modal .codex-item h3,
+.modal .reward-card > strong, .modal .replacement-copy > strong, .modal .one-cast-summary,
+.modal .equipment-options strong, .modal .history-battle-title strong,
+.modal .history-cast > summary, .modal .history-rewards strong,
+.modal .contribution-item h5, .modal .contribution-details h4,
+.modal .history-relic h6, .modal .history-battle-content h4,
+.modal .history-cast-content h5, .modal .history-battle-effects h5 {
+  font-size: var(--text-body);
+}
+.modal .modal-intro, .modal .help-steps p, .modal .help-note,
+.modal .settings-list small, .modal .codex-item p,
+.modal .reward-card > p, .modal .replacement-incoming p,
+.modal .replacement-description, .modal .equipment-editor p,
+.modal .report-caution, .modal .report-explainer, .modal .report-empty,
+.modal .history-retention, .modal .history-scope, .modal .history-export-note,
+.modal .history-notice, .modal .history-range, .modal .history-rewards p,
+.modal .history-procs li, .modal .history-empty {
+  font-size: var(--text-body);
+  line-height: 1.85;
+  color: #bbc8da;
+}
+.modal .modal-eyebrow, .modal .modal-footnote, .modal .reward-summary,
+.modal .reward-progress, .modal .reward-slots, .modal .relic-kind,
+.modal .relic-rank, .modal .take-relic, .modal .upgrade-path,
+.modal .unlock-notice, .modal .replacement-label, .modal .replacement-stage,
+.modal .replacement-loss, .modal .replacement-actions p,
+.modal .replacement-card > .take-relic, .modal .codex-item small,
+.modal .codex-item b, .modal .sweep-summary, .modal .one-cast-summary > div,
+.modal .result-growth, .modal .result-stats span, .modal .result-score small,
+.modal .result-score > span, .modal .equipment-editor summary,
+.modal .equipment-editor summary > span, .modal .equipment-options small,
+.modal .equipment-slots b, .modal .equipment-slots small,
+.modal .equipment-editor .equipment-saved, .modal .report-window button,
+.modal .report-sample, .modal .report-totals span, .modal .report-highlights b,
+.modal .report-highlights small, .modal .contribution-details > summary,
+.modal .contribution-details > summary > span,
+.modal .contribution-item h5 small, .modal .contribution-item-heading > b,
+.modal .contribution-metrics, .modal .effect-opportunities,
+.modal .report-next, .modal .report-no-opportunity,
+.modal .history-toolbar label, .modal .history-toolbar .secondary,
+.modal .history-list-heading small, .modal .history-list-heading > span,
+.modal .history-status, .modal .history-battle-title .history-status,
+.modal .history-battle-stats, .modal .history-metrics,
+.modal .history-battle-content h4 small, .modal .history-rewards small,
+.modal .history-relic h6 small, .modal .history-relic .history-metrics,
+.modal .history-relic .history-scope, .modal .history-battle-effects > summary,
+.modal .history-pagination .secondary, .modal .history-pagination > span,
+.modal .history-run-heading h3 > span, .modal .reward-breakdown,
+.modal .reward-breakdown .damage-breakdown {
+  font-size: var(--text-label);
+}
+.modal .history-toolbar select { font-size: var(--text-body); }
+.modal .replacement-incoming h3, .modal .contribution-heading h3,
+.modal .history-run-heading h3, .modal .history-list-heading h3 {
+  font-size: var(--text-heading);
+}
+.modal .breakdown-note { font-size: var(--text-label) !important; }
+.modal .contribution-heading, .modal .history-run-heading,
+.modal .history-list-heading, .modal .history-pagination { flex-wrap: wrap; }
+.modal .contribution-item-heading { flex-wrap: wrap; }
+.modal .contribution-metrics dt, .modal .contribution-metrics dd,
+.modal .damage-breakdown dt, .modal .damage-breakdown dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.modal .history-metrics dd { max-width: 65%; }
+.modal .history-pagination { row-gap: 12px; }
+.modal .settings-list input { width: 24px; height: 24px; }
+.modal .modal-close { min-width: 44px; min-height: 44px; }
+
+@media (min-width: 761px) {
+  .app-shell { width: min(1240px, 100% - 64px); }
+  .game-layout {
+    grid-template-columns: minmax(0, 600px) minmax(0, 400px);
+    gap: 40px;
+  }
+  .adventure-heading { max-width: 1040px; margin-inline: auto; }
+  .hero-description, .character-info > span:last-child,
+  .tutorial p, .enemy-behavior, .skill-description,
+  .inventory-item p, .empty-inventory, .last-spell p,
+  .prediction-detail, .command-panel #chain-step-detail,
+  .command-panel #chain-budget { font-size: var(--text-body); line-height: 1.8; }
+  .hero-description, .character-info > span:last-child,
+  .skill-description, .inventory-item p, .empty-inventory, .last-spell p {
+    color: #b5c3d6;
+  }
+  .quiet, .nav-button, .primary, .secondary, .text-button,
+  .hero-actions > .quiet, .home-record span, .home-record small,
+  .section-label, .chosen-skill, .site-footer, .art-caption,
+  .run-score > span, .enemy-overline, .enemy-intent > span,
+  .enemy-intent small, .enemy-health > span, .enemy-health small,
+  .enemy-behavior > span, .board-legend, .sheet-ward small,
+  .longest-origins, .longest-origins small, .battle-lore,
+  .tiny-button, .vitals span, .vitals small,
+  .prediction-card .section-label, .prediction-card .section-label span:last-child,
+  .prediction-numbers span, .prediction-outcome, .prediction-breakdown,
+  .damage-breakdown, .chain-stop, .sheet-forecast,
+  .skill-button small, .skill-button b, .skill-rank,
+  .skill-picker > span, .skill-picker button, .skill-picker button small,
+  .feedback, .spell-resources, .spell-resources small,
+  .mana-reserve, .mana-reserve small, .chance-forecast,
+  .chance-forecast small, .inventory summary, .inventory summary span,
+  .last-spell summary, .stowed-inventory > p, .stowed-inventory > span,
+  .stowed-inventory small, .relic-rank, .sheet-status,
+  .sheet-status small, .spell-growth, .spell-growth b,
+  .endless-track > span, .endless-track small, .guide-toggle, .command-panel .guide-heading,
+  .command-panel .guide-heading .text-button, .command-panel .chain-note,
+  .command-panel .guide-footnote, .command-panel .chain-navigation button,
+  .chain-position, .animation-skip, .board-loading span {
+    font-size: var(--text-label);
+  }
+  .primary, .secondary, .text-button, .skill-button strong,
+  .inventory-item strong, .chance-forecast strong,
+  .sheet-ward b, .vitals strong { font-size: var(--text-body); }
+  .character-info strong, .player-heading h2,
+  .command-panel .chain-guide h3 { font-size: var(--text-heading); }
+  .breakdown-note { font-size: var(--text-label) !important; }
+  .board-legend, .longest-origins { color: #b2c1d5; }
+  .hero-copy h1 { font-size: 3.75rem; }
+  .character-card { align-items: flex-start; min-width: 0; }
+  .character-info { min-width: 0; }
+  .character-symbol { flex-shrink: 0; }
+  .character-info .micro { font-size: .75rem; }
+  .home-record { gap: 40px; }
+  .character-section > .section-label { flex-wrap: wrap; }
+  .site-header { gap: 20px; }
+  .site-header nav { flex-shrink: 0; }
+  .enemy-overline { letter-spacing: .05em; gap: 8px; }
+  .enemy-intent { min-width: 104px; max-width: 150px; }
+  .enemy-info h1 { font-size: 1.5rem; }
+  .enemy-behavior { flex-wrap: wrap; gap: 0 10px; }
+  .sheet-status { flex-wrap: wrap; }
+  .spell-growth { white-space: normal; }
+  .board-legend { column-gap: 16px; }
+  .board-legend span { white-space: normal; }
+  .command-panel { min-width: 0; }
+  .player-heading { margin-bottom: 18px; }
+  .prediction-card { margin-top: 20px; }
+  .prediction-card .section-label { flex-wrap: wrap; }
+  .prediction-numbers { margin: 18px 0 12px; }
+  .prediction-numbers strong {
+    font-size: clamp(.875rem, calc(200px / var(--number-length, 3)), 2.25rem);
+  }
+  .skill-button { min-height: 68px; }
+  .skill-button:disabled { opacity: 1; border-color: #44475d; background: #182033; }
+  .skill-button > span:nth-child(2) { min-width: 0; }
+  .skill-description { margin-bottom: 14px; min-height: 0; }
+  .cast-button { min-height: 56px; }
+  .feedback { min-height: 0; }
+  .command-panel .guide-heading .text-button { margin: 0; }
+  .command-panel .chain-navigation { flex-wrap: wrap; }
+}
+
+@media (min-width: 761px) and (max-width: 1199px) {
+  .app-shell { width: calc(100% - 40px); }
+  .game-layout { grid-template-columns: minmax(0, 1fr) minmax(310px, 38%); gap: 24px; }
+  .hero-copy h1 { font-size: 3rem; }
+  .character-grid { gap: 10px; }
+  .character-card { padding: 16px 12px; gap: 10px; }
+  .enemy-portrait { width: 54px; height: 54px; }
+}
+
+@media (max-width: 760px) {
+  .modal .report-highlights, .modal .contribution-items,
+  .modal .equipment-options, .modal .equipment-slots { grid-template-columns: 1fr; }
+  .modal .history-toolbar { flex-wrap: wrap; }
+  .modal .history-toolbar label { flex-basis: 100%; }
+  .modal .result-stats { flex-wrap: wrap; gap: 16px; }
+  .modal .reward-summary { flex-wrap: wrap; gap: 8px 16px; }
+}

@@ -11,7 +11,7 @@ import { Random, PEERS, UNITS, candidates, near, row, col } from './sudoku';
 import type { Action, ChainTrace, FillEvent, Mark, Report, Preview, Run, Save, CharacterId, RelicId, PrimeEffect, PrimeRelicId, PrimeProcOutcome, SheetSegment, SkillId, EffectMetric } from './types';
 
 export function newSave(): Save {
-  return { version: 1, meta: { clears: 0, runs: 0, wins: 0, bestScore: 0, bestKills: 0, tutorialDone: false }, run: null, settings: { sound: false, fast: false, reducedMotion: false } };
+  return { version: 1, meta: { clears: 0, runs: 0, wins: 0, bestScore: 0, bestKills: 0, tutorialDone: false }, run: null, settings: { sound: false, fast: false, reducedMotion: false, largeText: false } };
 }
 function prepareBoard(run: Run, random: Random): void {
   const source = bank[run.puzzleOrder[run.puzzleCursor]];

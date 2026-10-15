@@ -20,6 +20,7 @@ export function parseSaveData(data: unknown): Save {
   if (!record(data) || data.version !== 1 || !record(data.meta) || !record(data.settings)) throw new Error('保存形式を読み込めません。');
   if (!['clears', 'runs', 'wins', 'bestScore'].every(k => integer(data.meta[k])) || typeof data.meta.tutorialDone !== 'boolean' || !['sound', 'fast', 'reducedMotion'].every(k => typeof data.settings[k] === 'boolean')) throw new Error('記録が破損しています。');
   if (data.meta.bestKills !== undefined && !integer(data.meta.bestKills)) throw new Error('記録が破損しています。');
+  if (data.settings.largeText !== undefined && typeof data.settings.largeText !== 'boolean') throw new Error('表示設定が不正です。');
   const r = data.run;
   if (r !== null) {
     const relics = new Set<string>(RELICS.map(x => x.id));
