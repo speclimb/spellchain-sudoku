@@ -1,8 +1,8 @@
+import { formatNumber as fmt } from '../format-number';
 import { relicOf } from '../game/content';
 import { ownedSkills, relicLevel, relicNextDescription, relicTierLabel, skillLevel, skillNextDescription, skillOf } from '../game/growth';
 import type { BattleLedger, EffectMetric, RelicId, Run, SkillId, SkillMetric } from '../game/types';
 
-const fmt = (n: number): string => n.toLocaleString('ja-JP');
 const esc = (s: string): string => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const emptyEffect = (): EffectMetric => ({ heldCasts: 0, opportunities: 0, triggers: 0, damage: 0, addedInputs: 0, fuelGranted: 0, fuelUsed: 0, mana: 0, prevented: 0, tokensGranted: 0, tokensUsed: 0, score: 0, healed: 0 });
 
@@ -74,7 +74,7 @@ export function contributionReport(run: Run, bossOnly = false): string {
       <h4>スキルの実績</h4><p class="report-explainer">そのスキルを装備して使用した詠唱全体の実績です。術師・遺物などの効果と超過分を含み、スキル単体が増やしたダメージではありません。通常詠唱は含みません。</p>
       <div class="contribution-items">${skills.map(id => {
         const item = skillOf(id), metric = total.skills[id], level = skillLevel(run, id);
-        return `<article class="contribution-item" data-skill-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>Lv.${level}</small></h5><b>${metric?.uses ?? 0}回使用</b></div>${metric?.uses ? metricList([{ label: '発揮ダメージ', value: fmt(metric.damage) }, { label: '1回あたりの平均', value: fmt(Math.round(metric.damage / metric.uses * 10) / 10) }, { label: '敵HP / 超過', value: `${fmt(metric.hpDamage)} / ${fmt(metric.overkill)}` }]) : '<p class="report-no-opportunity">この期間は未使用。弱いという意味ではありません。</p>'}<p class="report-next"><b>次の成長</b>${esc(skillNextDescription(run, id))}</p></article>`;
+        return `<article class="contribution-item" data-skill-report="${id}"><div class="contribution-item-heading"><span>${item.symbol}</span><h5>${esc(item.name)} <small>Lv.${level}</small></h5><b>${metric?.uses ?? 0}回使用</b></div>${metric?.uses ? metricList([{ label: '発揮ダメージ', value: fmt(metric.damage) }, { label: '1回あたりの平均', value: fmt(metric.damage / metric.uses) }, { label: '敵HP / 超過', value: `${fmt(metric.hpDamage)} / ${fmt(metric.overkill)}` }]) : '<p class="report-no-opportunity">この期間は未使用。弱いという意味ではありません。</p>'}<p class="report-next"><b>次の成長</b>${esc(skillNextDescription(run, id))}</p></article>`;
       }).join('')}</div>
       <h4>遺物の実績</h4><p class="report-explainer">連鎖詠唱数は追加された順に消費し、どの遺物の分を使ったか記録します。追加された数・消費した数と、連鎖詠唱数を消費しない入力は分けて表示します。発動率は機会の数とあわせて見てください。</p>
       <div class="contribution-items">${relicIds.map(id => {

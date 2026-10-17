@@ -1,11 +1,11 @@
+import { formatNumber as fmt, numberText, percentText } from '../format-number';
+export { percentText } from '../format-number';
 import type { Preview, PrimeRelicId } from '../game/types';
 
-export const percentText = (value: number): string => String(Number((value * 100).toFixed(3)));
-const fmt = (value: number): string => value.toLocaleString('ja-JP');
 export const rangeText = (minimum: number, maximum = minimum): string => minimum === maximum ? fmt(minimum) : `${fmt(minimum)}〜${fmt(maximum)}`;
 export const procName = (id: PrimeRelicId): string => ({ duality: '二の護符', trinity: '三の護符', quint: '五の護符', sept: '七の護符' })[id];
 export function procEffect(id: PrimeRelicId, value: number): string {
-  return id === 'trinity' ? `通常攻撃 ×${value}（シート完成加算・スキル追加攻撃は対象外）` : id === 'duality' ? `守護後の反撃を${percentText(value)}%軽減（祝福と合計60%まで）` : id === 'quint' ? `詠唱符 ＋${value}枚（次の詠唱から使用可能）` : `次の詠唱の連鎖詠唱数 ＋${value}`;
+  return id === 'trinity' ? `通常攻撃 ×${numberText(value)}（シート完成加算・スキル追加攻撃は対象外）` : id === 'duality' ? `守護後の反撃を${percentText(value)}%軽減（祝福と合計60%まで）` : id === 'quint' ? `詠唱符 ＋${numberText(value)}枚（次の詠唱から使用可能）` : `次の詠唱の連鎖詠唱数 ＋${numberText(value)}`;
 }
 
 /** Preview wording is derived only from guaranteed bounds, never from a proc roll. */
@@ -42,7 +42,7 @@ export function outcomeText(report: Preview): string {
 export function accessiblePrediction(report: Preview): string {
   const forecast = report.forecast;
   const effects = forecast?.procs?.map(proc => `${procName(proc.id)}は${percentText(proc.chance)}パーセントで${procEffect(proc.id, proc.value)}`).join('。');
-  return `${report.path.length}連鎖、確定ダメージ${report.damage}${forecast && forecast.damageMax !== report.damage ? `、最大${forecast.damageMax}ダメージ` : ''}、被ダメージ${retaliationText(report)}。${outcomeText(report)}${effects ? `。${effects}` : ''}`;
+  return `${report.path.length}連鎖、確定ダメージ${fmt(report.damage)}${forecast && forecast.damageMax !== report.damage ? `、最大${fmt(forecast.damageMax)}ダメージ` : ''}、被ダメージ${retaliationText(report)}。${outcomeText(report)}${effects ? `。${effects}` : ''}`;
 }
 export function damageBreakdown(report: Preview, preview = false): { label: string; value: string }[] {
   if (report.baseDamage === undefined) return [];
@@ -50,11 +50,11 @@ export function damageBreakdown(report: Preview, preview = false): { label: stri
   if (preview && report.forecast) {
     if (report.forecast.procs?.length) {
       for (const proc of report.forecast.procs) rows.push({ label: `${procName(proc.id)}（${percentText(proc.chance)}%）`, value: procEffect(proc.id, proc.value) });
-    } else if (report.forecast.chance) rows.push({ label: `三の護符（${percentText(report.forecast.chance)}%）`, value: `発動時 ×${report.forecast.multiplier}` });
+    } else if (report.forecast.chance) rows.push({ label: `三の護符（${percentText(report.forecast.chance)}%）`, value: `発動時 ×${numberText(report.forecast.multiplier)}` });
   } else if (report.procs?.length) {
     for (const proc of report.procs) rows.push({ label: `${procName(proc.id)} · ${proc.triggered ? '発動' : '不発'}`, value: proc.triggered ? procEffect(proc.id, proc.value) : '効果なし' });
   } else if (report.proc) {
-    rows.push({ label: `三の護符 · ${report.proc.triggered ? '発動' : '不発'}`, value: report.proc.triggered ? `×${report.proc.multiplier}` : '加算なし' });
+    rows.push({ label: `三の護符 · ${report.proc.triggered ? '発動' : '不発'}`, value: report.proc.triggered ? `×${numberText(report.proc.multiplier)}` : '加算なし' });
   }
   if (report.segments?.length) {
     for (const segment of report.segments.filter(part => part.fullClear)) {

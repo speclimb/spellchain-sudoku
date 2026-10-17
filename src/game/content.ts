@@ -1,3 +1,4 @@
+import { percentText } from '../format-number';
 import type { CharacterId, GreaterRelicId, RelicId, RepeatableRewardId, RewardId, Run, SkillId } from './types';
 import { relicGrowthDescription, relicLevel, relicTierLevel, relicValues, skillDescriptionFor, skillLevel, skillOf, type SkillRun, type RelicRun } from './growth';
 export interface Character { id: CharacterId; name: string; symbol: string; title: string; passive: string; skill: string; skillName: string; unlock: number; affinity: RelicId[] }
@@ -122,7 +123,7 @@ export function rewardProgression(id: RewardId, run: Run): string {
   }
   if (archived) return `Lv.${after}・${tier(relicTierLevel(next, baseId))}で再取得`;
   if (before && before === after && primeIds.includes(baseId)) {
-    const percent = (value: number) => `${Number((value * 100).toFixed(3))}％`;
+    const percent = (value: number) => `${percentText(value)}％`;
     return `発動率 ${percent(relicValues(run, baseId).chance)} → ${percent(relicValues(next, baseId).chance)}`;
   }
   return before ? `Lv.${before} → Lv.${after}` : `Lv.${after}・${tier(relicTierLevel(next, baseId))}`;

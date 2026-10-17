@@ -1,3 +1,4 @@
+import { numberText, percentText } from '../format-number';
 import type { CharacterId, RelicId, Run, SkillId } from './types';
 
 export const MAX_GROWTH_LEVEL = 10;
@@ -108,8 +109,7 @@ export function relicValues(run: RelicRun, id: RelicId): RelicValues {
   }
   return result;
 }
-const numberText = (value: number): string => Number(value.toFixed(3)).toString();
-const percent = (value: number): string => `${numberText(value * 100)}％`;
+const percent = (value: number): string => `${percentText(value)}％`;
 export function skillDescriptionFor(run: SkillRun, id: SkillId): string {
   const value = skillValues(run, id);
   if (!value.level) return `未習得。${skillOf(id).description}`;

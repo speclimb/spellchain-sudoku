@@ -123,6 +123,8 @@ export function parseSaveData(data: unknown): Save {
         && current.battles.every(battle => battle.stage <= r.stage
           && battle.casts.every(cast => cast.id <= r.castCounter)
           && battle.rewards.every(reward => reward.revision <= r.revision))));
+    // A damaged optional build must not discard healthy cast logs or core progress.
+    if (current?.build && r && (current.build.stage > r.stage || current.build.cast > r.castCounter || current.build.revision > r.revision)) delete current.build;
     if (history && matchesCore) data.history = history; else delete data.history;
   }
   return data as unknown as Save;

@@ -199,3 +199,7 @@
     line-height: 1.7;
   }
 }
+
+/* Relic growth controls and row labels follow the large-text preference. */
+.modal .codex-growth summary, .modal .codex-tier-label, .modal .codex-level-label { font-size: var(--text-body); }
+.modal .codex-level-label span { font-size: var(--text-label); }
