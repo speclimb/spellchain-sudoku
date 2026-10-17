@@ -116,55 +116,165 @@ test('C ignores missing selection, dialogs, modifiers, repeated keys, compositio
   expect((await savedGame(page)).run!.castCounter).toBe(1);
 });
 
-test('desktop: cast button stays in the same top-right position through skill, prediction and guide changes', async ({ page }) => {
-  await page.setViewportSize({ width: 1108, height: 1052 });
-  const fixture = await prepare(page, { expanded: true });
-  const cast = page.locator('[data-action="cast"]');
-  const initial = await cast.boundingBox();
-  expect(initial).not.toBeNull();
-  expect(initial!.x).toBeGreaterThan(550);
-  const heading = await page.locator('.player-heading').boundingBox();
-  expect(initial!.y + initial!.height).toBeLessThanOrEqual(heading!.y);
-  const samePosition = async () => {
-    await page.evaluate(() => window.scrollTo({ top: 0 }));
-    const bounds = await cast.boundingBox();
-    expect(bounds).not.toBeNull();
-    expect(Math.abs(bounds!.x - initial!.x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds!.y - initial!.y)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds!.width - initial!.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds!.height - initial!.height)).toBeLessThanOrEqual(1);
-  };
-  await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
-  await page.locator('.prediction-breakdown summary').click(); await samePosition();
-  await page.locator('[data-action="chain-guide"]').click(); await samePosition();
-  await page.locator('[data-action="chain-next"]').click(); await samePosition();
-  await page.locator('[data-action="chain-close"]').click();
-  await page.locator('[data-action="skill"]').click(); await samePosition();
-  await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
-  await page.locator('[data-select-skill="bridge"]').click(); await samePosition();
-  await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
-  await page.screenshot({ path: '.runtime/screenshots/desktop-cast-controls.png', fullPage: false });
-  await page.evaluate(() => window.scrollTo({ top: 300 }));
-  const sticky = await cast.boundingBox();
-  expect(sticky!.y).toBeGreaterThanOrEqual(0);
-  expect(sticky!.y).toBeLessThan(initial!.y);
-  expect(sticky!.y + sticky!.height).toBeLessThanOrEqual(1052);
-});
+for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844 }, { width: 320, height: 844 }]) {
+  test(`${viewport.width}px: cast follows HP/mana in visual and Tab order and stays reachable while scrolling`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const fixture = await prepare(page, { expanded: true });
+    const cast = page.locator('[data-action="cast"]');
+    const controls = page.locator('.cast-controls');
+    await expect(controls).toHaveCount(1);
+    await expect(controls).toHaveCSS('position', 'sticky');
+    await expect(controls).toHaveCSS('order', '0');
+    expect(await controls.evaluate(element => element.previousElementSibling?.className)).toBe('vitals');
 
-test('mobile: cast controls lead the command panel without overflow or covering the board', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const fixture = await prepare(page, { expanded: true });
-  await page.locator('[data-action="skill"]').click();
-  await page.locator(`[data-cell="${fixture.cell}"]`).click();
-  await expect(page.locator('[data-action="cast"]')).toBeEnabled();
-  const cast = await page.locator('[data-action="cast"]').boundingBox();
-  const board = await page.locator('.board-surface').boundingBox();
-  const vitals = await page.locator('.vitals').boundingBox();
-  expect(cast!.y).toBeGreaterThanOrEqual(board!.y + board!.height);
-  expect(cast!.y + cast!.height).toBeLessThanOrEqual(vitals!.y);
-  expect(cast!.height).toBeGreaterThanOrEqual(44);
-  expect(cast!.x).toBeGreaterThanOrEqual(0);
-  expect(cast!.x + cast!.width).toBeLessThanOrEqual(390);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: '.runtime/screenshots/mobile-cast-controls.png', fullPage: true });
-});
+    await page.evaluate(() => scrollTo(0, 0));
+    const initial = (await cast.boundingBox())!;
+    const vitals = (await page.locator('.vitals').boundingBox())!;
+    const heading = await page.locator('.player-heading').boundingBox();
+    const board = (await page.locator('.board-surface').boundingBox())!;
+    if (viewport.width > 760) {
+      expect(heading).not.toBeNull();
+      expect(heading!.y + heading!.height).toBeLessThanOrEqual(vitals.y);
+    } else await expect(page.locator('.player-heading')).toBeHidden();
+    expect(initial.y - (vitals.y + vitals.height)).toBeGreaterThanOrEqual(0);
+    expect(initial.y - (vitals.y + vitals.height)).toBeLessThanOrEqual(18);
+    expect(initial.height).toBeGreaterThanOrEqual(44);
+    expect(initial.x).toBeGreaterThanOrEqual(0);
+    expect(initial.x + initial.width).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width <= 760) expect(initial.y).toBeGreaterThanOrEqual(board.y + board.height);
+    else expect(initial.x).toBeGreaterThanOrEqual(board.x + board.width);
+    const samePosition = async () => {
+      await page.evaluate(() => scrollTo(0, 0));
+      const bounds = (await cast.boundingBox())!;
+      const dimensions = viewport.width <= 760 ? ['x', 'width', 'height'] as const : ['x', 'y', 'width', 'height'] as const;
+      for (const dimension of dimensions) {
+        expect(Math.abs(bounds[dimension] - initial[dimension])).toBeLessThanOrEqual(1);
+      }
+      // The phone guide belongs below the board, above the entire panel, so
+      // opening it can move the panel without separating cast from HP/mana.
+      const currentVitals = (await page.locator('.vitals').boundingBox())!;
+      expect(bounds.y - (currentVitals.y + currentVitals.height)).toBeGreaterThanOrEqual(0);
+      expect(bounds.y - (currentVitals.y + currentVitals.height)).toBeLessThanOrEqual(18);
+      expect(await controls.evaluate(element => element.previousElementSibling?.className)).toBe('vitals');
+      for (const selector of ['.prediction-card', '.skill-picker', '[data-action="skill"]']) {
+        const following = (await page.locator(selector).boundingBox())!;
+        expect(following.y).toBeGreaterThanOrEqual(bounds.y + bounds.height);
+      }
+    };
+    await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
+    await page.locator('.prediction-breakdown summary').click(); await samePosition();
+    await page.locator('[data-action="chain-guide"]').click(); await samePosition();
+    await page.locator('[data-action="chain-next"]').click(); await samePosition();
+    await page.locator('[data-action="chain-close"]').click();
+    await page.locator('[data-action="skill"]').click(); await samePosition();
+    await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
+    await page.locator('[data-select-skill="bridge"]').click(); await samePosition();
+    await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
+    await expect(cast).toBeEnabled();
+
+    // Focus order follows the same HP/mana → cast → forecast → skill layout.
+    if (viewport.width > 760) await page.locator('.player-heading [data-action="home"]').focus();
+    else await page.locator(`[data-cell="${fixture.cell}"]`).focus();
+    await page.keyboard.press('Tab'); await expect(cast).toBeFocused();
+    await page.keyboard.press('Tab'); await expect(page.locator('[data-action="chain-guide"]')).toBeFocused();
+    await page.keyboard.press('Shift+Tab'); await expect(cast).toBeFocused();
+    await samePosition();
+    await page.screenshot({ path: `.runtime/screenshots/cast-below-vitals-${viewport.width}.png`, fullPage: true });
+
+    // Exercise expanded combat details at mid-panel and near-bottom positions.
+    // Compact phone panels may reach the document end before the rail pins.
+    await page.locator('.prediction-breakdown').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+    await page.locator('.inventory').evaluate(element => { (element as HTMLDetailsElement).open = true; });
+    const before = await savedText(page);
+    const stickyTop = viewport.width <= 760 ? 8 : 12;
+    const naturalCastY = await cast.evaluate(element => element.getBoundingClientRect().top + scrollY);
+    const assertReachable = async () => {
+      const box = (await cast.boundingBox())!;
+      const actualScrollY = await page.evaluate(() => scrollY);
+      const expectedY = Math.max(stickyTop, naturalCastY - actualScrollY);
+      expect(box.y).toBeGreaterThanOrEqual(expectedY - 1);
+      expect(box.y).toBeLessThanOrEqual(expectedY + 1);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+      expect(await cast.evaluate(element => {
+        const r = element.getBoundingClientRect();
+        return element.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      })).toBe(true);
+    };
+    await page.evaluate(top => scrollTo(0, top), initial.y + 160);
+    await assertReachable();
+    await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight - innerHeight - 10));
+    await assertReachable();
+
+    // Scroll-to and keyboard navigation must leave the following controls
+    // below the opaque rail, with their complete touch targets unobscured.
+    for (const selector of ['.prediction-card', '.prediction-breakdown summary', '[data-select-skill="bridge"]', '[data-action="skill"]', '.inventory summary']) {
+      const target = page.locator(selector);
+      await target.evaluate(element => element.scrollIntoView({ block: 'start' }));
+      const box = (await target.boundingBox())!;
+      const action = (await cast.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(action.y + action.height + 4);
+      expect(box.y).toBeLessThan(viewport.height);
+      if (selector !== '.prediction-card') {
+        await target.focus();
+        expect(await target.evaluate(element => {
+          const r = element.getBoundingClientRect();
+          return element.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+        })).toBe(true);
+      }
+    }
+    await page.locator('[data-select-skill="bastion"]').focus();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('[data-action="skill"]')).toBeFocused();
+    const skill = (await page.locator('[data-action="skill"]').boundingBox())!;
+    const pinned = (await cast.boundingBox())!;
+    expect(skill.y).toBeGreaterThanOrEqual(pinned.y + pinned.height + 4);
+    await page.screenshot({ path: `.runtime/screenshots/cast-sticky-${viewport.width}.png`, fullPage: false });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await savedText(page)).toBe(before);
+  });
+}
+
+for (const height of [600, 320]) {
+  test(`1440x${height}: ordinary collapsed panel keeps cast visible through desktop scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height });
+    await page.goto('/');
+    await page.getByRole('button', { name: /冒険をはじめる/ }).click();
+    await expect(page.locator('canvas')).toBeVisible();
+    await page.locator('[data-cell][aria-disabled="false"]').first().click();
+
+    const panel = page.locator('.command-panel');
+    const cast = panel.locator('[data-action="cast"]');
+    await expect(cast).toBeEnabled();
+    await expect(panel.locator('.cast-controls')).toHaveCount(1);
+    // Use normal controls only: no fixture inventory, extra skills, open
+    // prediction breakdowns, spacers, or injected page height.
+    for (const details of await panel.locator('details').all()) {
+      if (await details.getAttribute('open') === null) continue;
+      await details.locator(':scope > summary').click();
+      await expect(details).not.toHaveAttribute('open', '');
+    }
+    const before = await savedText(page);
+    const maxScroll = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+    expect(maxScroll).toBeGreaterThan(0);
+
+    for (const position of ['middle', 'bottom'] as const) {
+      await page.evaluate(({ maxScroll, position }) => {
+        scrollTo({ top: position === 'middle' ? maxScroll / 2 : maxScroll, behavior: 'instant' });
+      }, { maxScroll, position });
+      await expect.poll(async () => page.evaluate(() => scrollY)).toBeCloseTo(position === 'middle' ? Math.round(maxScroll / 2) : maxScroll, 0);
+      const bounds = (await cast.boundingBox())!;
+      expect(bounds, `${position}: cast bounds exist`).not.toBeNull();
+      expect(bounds.x, `${position}: left edge`).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width, `${position}: right edge`).toBeLessThanOrEqual(1440);
+      expect(bounds.y, `${position}: top edge`).toBeGreaterThanOrEqual(0);
+      expect(bounds.y + bounds.height, `${position}: bottom edge`).toBeLessThanOrEqual(height);
+      expect(await cast.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return [[0.5, 0.5], [0.1, 0.5], [0.9, 0.5]].every(([x, y]) =>
+          element.contains(document.elementFromPoint(rect.x + rect.width * x, rect.y + rect.height * y)));
+      }), `${position}: cast center and side targets are unobscured`).toBe(true);
+      await page.screenshot({ path: `.runtime/screenshots/cast-collapsed-1440x${height}-${position}.png` });
+    }
+    expect(await savedText(page)).toBe(before);
+  });
+}

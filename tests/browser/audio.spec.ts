@@ -154,7 +154,7 @@ test('sound starts muted; enabling it loads twelve real MP3 buffers and gameplay
   const cell = await fixture(page, 'chain');
   expect((await audit(page)).requests).toEqual([]);
   expect((await audit(page)).decoded).toEqual([]);
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await ready(page);
   const loaded = await audit(page);
   expect(loaded.requests).toHaveLength(12);
@@ -176,7 +176,7 @@ test('sound starts muted; enabling it loads twelve real MP3 buffers and gameplay
 test('mobile full-sheet completion plays its seal, shield, sheet-clear and growth sounds', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const cell = await fixture(page, 'sheet');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await ready(page);
   await page.locator(`[data-cell="${cell}"]`).click();
   await page.locator('[data-action="cast"]').click();
@@ -191,13 +191,13 @@ test('mobile full-sheet completion plays its seal, shield, sheet-clear and growt
 
 test('muting during a cast stops active samples and later phases stay silent while the move finishes', async ({ page }) => {
   const cell = await fixture(page, 'chain');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await ready(page);
   await page.locator(`[data-cell="${cell}"]`).click();
   await page.locator('[data-action="cast"]').click();
   await expect.poll(async () => (await audit(page)).active.length, { intervals: [10] }).toBeGreaterThan(0);
   const before = await audit(page);
-  await page.getByRole('button', { name: '消音する', exact: true }).click();
+  await page.getByRole('button', { name: '音あり：消音する', exact: true }).click();
   await expect(page.locator('[data-action="cast"]')).toHaveText(/詠唱中/);
   await expect.poll(async () => (await audit(page)).active.length, { intervals: [10] }).toBe(0);
   const muted = await audit(page);
@@ -213,7 +213,7 @@ test('failed sound downloads do not stop casting, damage, progression or saving'
   page.on('pageerror', error => errors.push(error.message));
   await page.route(/\.mp3(?:[?#]|$)/, route => route.fulfill({ status: 404, contentType: 'text/plain', body: 'missing test sound' }));
   const cell = await fixture(page, 'sheet');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await expect.poll(async () => (await audit(page)).requests.length, { intervals: [50] }).toBe(12);
   expect((await audit(page)).requests.every(item => item.status === 404)).toBe(true);
   await page.locator(`[data-cell="${cell}"]`).click();
@@ -229,7 +229,7 @@ test('failed sound downloads do not stop casting, damage, progression or saving'
 
 test('all twelve cues use decoded samples and rapid duplicates are limited', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await ready(page);
   const decodedBefore = (await audit(page)).decoded.length;
   await page.evaluate(async () => {
@@ -266,8 +266,8 @@ test('all twelve cues use decoded samples and rapid duplicates are limited', asy
 test('muted or disposed requests are not replayed after pending sound downloads finish', async ({ page }) => {
   await page.route(/\.mp3(?:[?#]|$)/, async route => { await new Promise(resolve => setTimeout(resolve, 350)); await route.continue(); });
   await page.goto('/');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
-  await page.getByRole('button', { name: '消音する', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音あり：消音する', exact: true }).click();
   await ready(page);
   const loadedMuted = (await audit(page)).started.length;
   await page.waitForTimeout(250);
@@ -289,7 +289,7 @@ test('muted or disposed requests are not replayed after pending sound downloads 
 
 test('suspended audio drops cues instead of replaying them after resume', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await ready(page);
   const decodedBefore = (await audit(page)).decoded.length;
   await page.evaluate(async () => {

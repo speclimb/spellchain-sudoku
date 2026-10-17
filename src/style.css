@@ -324,8 +324,12 @@
 .enemy-health{flex-wrap:wrap;gap:3px 8px}.enemy-health>.health-track{min-width:24px}.enemy-health>span{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 @media(max-width:760px){body:has(.game-layout) .site-header{height:44px}.vitals>div>div:first-child{margin-bottom:3px}.tutorial{margin-bottom:2px}.enemy-behavior{margin-bottom:3px}}
 
-/* Keep the primary action ahead of every variable-height combat detail. */
-.cast-controls{position:sticky;top:12px;z-index:3;margin-bottom:18px;background:#101a2c;border-radius:4px;box-shadow:0 6px 16px #070e1b66}
+/* Keep the single primary action directly after HP/mana. Reserve scroll
+   clearance so keyboard focus and scrollIntoView stay below the sticky rail. */
+html:has(.game-layout){scroll-padding-top:calc(12px + 5rem)}
+.command-panel{align-self:stretch}
+.command-panel>.cast-controls~*,.command-panel .cast-controls~* :is(button,summary){scroll-margin-top:8px}
+.cast-controls{position:sticky;top:12px;z-index:3;margin:14px 0 18px;flex-shrink:0;background:#101a2c;border-radius:4px;box-shadow:0 6px 16px #070e1b66}
 .cast-controls .cast-button{min-height:56px;gap:12px}
 .cast-controls .cast-label{font-size:inherit;text-align:left;min-width:0}
 .cast-controls .cast-shortcut{display:flex;align-items:center;gap:12px;flex-shrink:0;font-size:inherit}
@@ -335,3 +339,7 @@
   .cast-controls{top:8px;margin:0}
   .cast-controls .cast-button{min-height:48px}
 }
+
+/* Current sound state stays readable without squeezing the header controls. */
+.site-header .sound-button{width:auto;min-width:64px;padding:0 10px;font-size:13px;line-height:1;white-space:nowrap;flex-shrink:0}
+@media(max-width:760px){.site-header .sound-button{min-width:52px;padding:0 8px;font-size:12px}}

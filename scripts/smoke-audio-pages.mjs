@@ -55,7 +55,7 @@ try {
   const loaded = await page.goto(base);
   assert.equal(loaded.status(), 200);
   assert.equal(responses.filter(item => item.url.endsWith('.mp3')).length, 0, 'Default-muted page must not fetch samples.');
-  await page.getByRole('button', { name: '音をオンにする', exact: true }).click();
+  await page.getByRole('button', { name: '音なし：音をオンにする', exact: true }).click();
   await page.waitForFunction(() => window.audioPages.decoded.length === 12, null, { timeout: 10000 });
   await page.getByRole('button', { name: /冒険をはじめる/ }).click();
   await page.locator('[data-cell][aria-disabled="false"]').first().click();
