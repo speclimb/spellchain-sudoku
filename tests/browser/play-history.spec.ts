@@ -288,7 +288,9 @@ test('retained adventures, omitted data and 600 casts stay paged and keyboard ac
   await expect(page.locator('.history-cast>summary').first()).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.locator('.history-cast').first()).toHaveAttribute('open', '');
-  await expect(page.locator('.history-cast-content .history-metrics')).toHaveCount(3);
+  const openedCast = page.locator('.history-cast[open] .history-cast-content');
+  await expect(openedCast.getByRole('heading', { name: '魔力と蓄電', exact: true })).toBeVisible();
+  await expect(openedCast.getByRole('heading', { name: '接続の栞', exact: true })).toBeVisible();
   await page.keyboard.press('Tab');
   expect(await page.evaluate(() => !!document.activeElement?.closest('.history-modal'))).toBe(true);
   await noOverflow(page);

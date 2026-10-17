@@ -12,13 +12,13 @@ export interface FillEvent {
   /** Global sheet identity; absent only in legacy single-sheet reports. */
   sheet?: number; sheetStart?: boolean;
   cell: number; value: number; ordinal: number; source: 'root' | 'echo' | 'chain';
-  units: number[]; mark: Mark; hop?: boolean; bridge?: boolean;
+  units: number[]; mark: Mark; hop?: boolean; bridge?: boolean; rescue?: boolean;
 }
 export interface ChainStep {
   sheet?: number; sheetStart?: boolean;
   from: number | null; cell: number; source: FillEvent['source']; sharedUnits: number[];
   candidateValues: number[]; eligibleCells: number[]; tiedCells: number[]; initiallySingle: boolean;
-  remainingBefore: number; remainingAfter: number; addedAuto: number; hop?: boolean; bridge?: boolean;
+  remainingBefore: number; remainingAfter: number; addedAuto: number; hop?: boolean; bridge?: boolean; rescue?: boolean;
 }
 export interface ChainTrace {
   initialAuto: number; bonuses: { label: string; amount: number }[]; steps: ChainStep[];
@@ -74,6 +74,8 @@ export interface Report {
   /** Clear bonus is additive after a proc, never amplified by it. */
   baseDamage?: number; guaranteedDamage?: number; clearBonus?: number; clearRatio?: number; oneCastClear?: boolean;
   manaOverflow?: number; manaRestored?: number; proc?: ProcOutcome;
+  /** Limited reconnect item accounting; absent in older encounter reports. */
+  rescueItemsBefore?: number; rescueItemsAfter?: number; rescueItemsGranted?: number;
 }
 /** Forecasts clone board RNG when needed; they never consume source state, roll procs, or choose rewards. */
 export interface Preview extends Report { forecast?: Forecast }
@@ -83,6 +85,10 @@ export interface Run {
   expansionVersion?: 1; enemyRulesVersion?: 0 | 1;
   /** Missing/zero preserves the HP of an already-started pre-rebalance battle. */
   enemyHealthVersion?: 0 | 1;
+  /** Missing preserves the in-flight encounter's chain, attack and boss HP rules. */
+  endgameBalanceVersion?: 1 | 2;
+  /** Consumable reconnect stock and already awarded level milestones. */
+  rescueItems?: number; rescueMilestones?: number;
   skillLevels?: Partial<Record<SkillId, number>>; equippedSkills?: SkillId[];
   relicLevels?: Partial<Record<RelicId, number>>;
   stowedRelics?: Partial<Record<RelicId, { level: number; rank: number; tier: number }>>;

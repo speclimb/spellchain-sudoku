@@ -6,6 +6,7 @@ import { skillLevel, selectedSkill, skillValues, relicValues } from './growth';
 import { enemyForRun, enemyIncoming, applyEnemyArmor } from './enemies';
 import { effectMetrics, recordContribution } from './contributions';
 import { prepareRelicReward } from './relic-slots';
+import { activateLimitedRescue, awardRescueItems, canRescueChain, RESCUE_COST } from './endgame';
 import { beginHistory, ensureHistoryRun, recordHistory, forkHistory, historyKey } from './history';
 export { canTakeReward } from './rewards';
 import { Random, connectedSingles, UNITS, candidates, near, row, col } from './sudoku';
@@ -61,6 +62,11 @@ export function sheetShield(run: Run): number {
 function grow(run: Run, report: Report, levels: number): void {
   const before = run.hp;
   run.spellLevel += levels; run.maxHp += levels * 4;
+  const granted = awardRescueItems(run);
+  if (run.endgameBalanceVersion === 2) {
+    report.rescueItemsGranted = (report.rescueItemsGranted ?? 0) + granted;
+    report.rescueItemsAfter = run.rescueItems;
+  }
   run.hp = Math.min(run.maxHp, run.hp + levels * 10);
   report.healed += run.hp - before;
   report.levelsGained = levels; report.spellLevelAfter = run.spellLevel; report.maxHpGained = levels * 4;
@@ -72,7 +78,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
   ensureHistoryRun(next);
   const run: Run = {
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0, balanceVersion: 2, castCounter: 0,
-    expansionVersion: 1, relicBalanceVersion: 1, stowedRelics: {}, enemyRulesVersion: 1, enemyHealthVersion: 1, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
+    expansionVersion: 1, relicBalanceVersion: 1, stowedRelics: {}, enemyRulesVersion: 1, enemyHealthVersion: 1, endgameBalanceVersion: 2, rescueItems: 0, rescueMilestones: 0, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
     character, skillRank: 1, stage: 0, turn: 0, phase: 'battle', cells: [], solution: [], givens: [], marks: [],
     puzzleOrder: random.shuffle(bank.map((_, i) => i)), puzzleCursor: 0, sheet: 1, encounterSheet: 1, spellLevel: 1,
     freeSkillTokens: 0, reservedAuto: 0, boons: { defense: 0, magic: 0 },
@@ -97,16 +103,17 @@ const primeDigits: Record<PrimeRelicId, number> = { duality: 2, trinity: 3, quin
 /** A local, no-RNG lookahead for the fresh sheet's deterministic entry point.
  * It spends one auto for entry and preserves once-per-cast rekindle/hop state.
  * It does not recurse into another sheet: only this sheet's length breaks ties. */
-function measureSheet(source: Run, root: number, fuel: number, rekindled: boolean, hopsLeft: number, reconnectsLeft: number): number {
+function measureSheet(source: Run, root: number, fuel: number, rekindled: boolean, hopsLeft: number, reconnectsLeft: number, rescueLeft: boolean): number {
   const cells = [...source.cells];
   let current = root, count = 0;
-  const fill = (target: number) => {
-    cells[target] = source.solution[target]; fuel--; count++;
+  const fill = (target: number, cost = 1) => {
+    cells[target] = source.solution[target]; fuel -= cost; count++;
     if (!rekindled && source.inventory.includes('rekindle') && UNITS.some(unit => unit.includes(target) && unit.every(i => cells[i]))) { fuel += relicValues(source, 'rekindle').rekindleAuto; rekindled = true; }
     current = target;
   };
   fill(root);
   while (fuel > 0) {
+    let cost = 1;
     let eligible = connectedSingles(cells, current);
     if (!eligible.length && hopsLeft > 0) {
       eligible = cells.flatMap((v, i) => !v && source.solution[i] === source.solution[current] ? [i] : []).sort((a, b) => near(current, a, b));
@@ -116,8 +123,12 @@ function measureSheet(source: Run, root: number, fuel: number, rekindled: boolea
       eligible = cells.flatMap((v, i) => !v && candidates(cells, i).length === 1 ? [i] : []).sort((a,b) => near(current,a,b));
       if (eligible.length) reconnectsLeft--;
     }
+    if (!eligible.length && rescueLeft && fuel >= RESCUE_COST) {
+      eligible = cells.flatMap((v, i) => !v && candidates(cells, i).length === 1 ? [i] : []).sort((a,b) => near(current,a,b));
+      if (eligible.length) { rescueLeft = false; cost = RESCUE_COST; }
+    }
     if (eligible[0] === undefined) break;
-    fill(eligible[0]);
+    fill(eligible[0], cost);
   }
   return count;
 }
@@ -137,6 +148,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   run.reservedAuto = 0;
   if (!skill) run.afterglow = false;
   let rekindled = false, hopsLeft = values?.fuseHops ?? 0, reconnectsLeft = values?.reconnects ?? 0, maxShield = sheetShield(source), rawDamage = 0, wardShield = 0, maxMarkedShield = 0;
+  let rescueLeft = canRescueChain(source);
   let rawWithout: Partial<Record<RelicId, number>> = {};
   const damageRelics = ['pen', 'lens', 'stroke', 'glass', 'amplifier', 'echo'] as const;
   const glassMultiplier = relicValues(run, 'glass').damageMultiplier;
@@ -179,18 +191,22 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     segments.push(segment);
   };
   beginSegment();
-  const fill = (target: number, kind: FillEvent['source'], from: number | null, eligibleCells: number[], hop = false, sheetStart = false, bridge = false) => {
+  const fill = (target: number, kind: FillEvent['source'], from: number | null, eligibleCells: number[], hop = false, sheetStart = false, bridge = false, rescue = false) => {
     if (run.cells[target]) throw new Error('同じマスを二度埋めることはできません。');
     const candidateValues = candidates(run.cells, target), remainingBefore = fuel;
     const distance = (i: number) => from === null ? 0 : Math.abs(row(from) - row(i)) + Math.abs(col(from) - col(i));
     const tiedCells = from === null ? [] : eligibleCells.filter(i => distance(i) === distance(eligibleCells[0]));
     if (kind === 'chain') {
-      fuel--; const bucket = fuelQueue.find(item => item.left > 0);
-      if (bucket) { bucket.left--; if (bucket.id && metrics[bucket.id]) metrics[bucket.id]!.fuelUsed++; }
+      const cost = rescue ? RESCUE_COST : 1;
+      fuel -= cost;
+      for (let spent = 0; spent < cost; spent++) {
+        const bucket = fuelQueue.find(item => item.left > 0);
+        if (bucket) { bucket.left--; if (bucket.id && metrics[bucket.id]) metrics[bucket.id]!.fuelUsed++; }
+      }
     }
     run.cells[target] = run.solution[target];
     const units = UNITS.flatMap((unit, id) => unit.includes(target) && unit.every(i => run.cells[i] !== 0) ? [id] : []);
-    path.push({ sheet: run.sheet, cell: target, value: run.cells[target], ordinal: path.length + 1, source: kind, units, mark: run.marks[target], ...(hop ? { hop: true } : {}), ...(bridge ? { bridge: true } : {}), ...(sheetStart ? { sheetStart: true } : {}) });
+    path.push({ sheet: run.sheet, cell: target, value: run.cells[target], ordinal: path.length + 1, source: kind, units, mark: run.marks[target], ...(hop ? { hop: true } : {}), ...(bridge ? { bridge: true } : {}), ...(rescue ? { rescue: true } : {}), ...(sheetStart ? { sheetStart: true } : {}) });
     // Per-cell base progression softens at 80 after cell 36; the chain and every
     // later contribution continue. There is no arbitrary chain/sheet clamp.
     const stroke = has('stroke') && path.length <= relicValues(run, 'stroke').strokeCells ? relicValues(run, 'stroke').strokeMultiplier : 1;
@@ -220,7 +236,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     chain.steps.push({ sheet: run.sheet, from, cell: target, source: kind,
       sharedUnits: from === null ? [] : UNITS.flatMap((unit, id) => unit.includes(from) && unit.includes(target) ? [id] : []),
       candidateValues, eligibleCells, tiedCells, initiallySingle: initiallySingle[target], remainingBefore, remainingAfter: fuel, addedAuto,
-      ...(hop ? { hop: true } : {}), ...(bridge ? { bridge: true } : {}), ...(sheetStart ? { sheetStart: true } : {}),
+      ...(hop ? { hop: true } : {}), ...(bridge ? { bridge: true } : {}), ...(rescue ? { rescue: true } : {}), ...(sheetStart ? { sheetStart: true } : {}),
     });
   };
   let current = cell;
@@ -240,13 +256,13 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
       const roots = run.cells.flatMap((value, target) => !value && initiallySingle[target] ? [target] : []);
       // Stable ascending scan means equal lengths choose the upper-left cell.
       let best = roots[0], length = -1;
-      for (const root of roots) { const measured = measureSheet(run, root, fuel, rekindled, hopsLeft, reconnectsLeft); if (measured > length) { best = root; length = measured; } }
+      for (const root of roots) { const measured = measureSheet(run, root, fuel, rekindled, hopsLeft, reconnectsLeft, rescueLeft); if (measured > length) { best = root; length = measured; } }
       if (best === undefined) throw new Error('次のシートの確定起点が見つかりません。');
       fill(best, 'chain', null, roots, false, true); current = best;
       continue;
     }
     let eligible = connectedSingles(run.cells, current);
-    let hop = false, bridge = false;
+    let hop = false, bridge = false, rescue = false;
     if (!eligible.length && hopsLeft > 0) {
       eligible = run.cells.flatMap((v, i) => !v && run.solution[i] === run.solution[current] ? [i] : []).sort((a, b) => near(current, a, b));
       hop = eligible.length > 0;
@@ -255,9 +271,14 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
       eligible = run.cells.flatMap((v,i) => !v && candidates(run.cells,i).length === 1 ? [i] : []).sort((a,b) => near(current,a,b));
       bridge = eligible.length > 0;
     }
+    if (!eligible.length && rescueLeft && fuel >= RESCUE_COST) {
+      eligible = run.cells.flatMap((v,i) => !v && candidates(run.cells,i).length === 1 ? [i] : []).sort((a,b) => near(current,a,b));
+      rescue = eligible.length > 0;
+    }
     if (eligible[0] === undefined) break;
     if (hop) hopsLeft--; if (bridge) reconnectsLeft--;
-    fill(eligible[0], 'chain', current, eligible, hop, false, bridge); current = eligible[0];
+    if (rescue) { rescueLeft = false; if (run.endgameBalanceVersion === 2) run.rescueItems = run.rescueItems! - 1; }
+    fill(eligible[0], 'chain', current, eligible, hop, false, bridge, rescue); current = eligible[0];
   }
   endSegment(); run.randomState = boardRandom.state;
   chain.remainingAuto = fuel;
@@ -317,6 +338,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     units: path.reduce((n, event) => n + event.units.length, 0), weak: path.filter(event => event.mark === 'weak').length,
     defeated: false, fullClear: sheetsCompleted > 0, sweep: [], hpBefore: source.hp, enemyBefore: source.enemyHp,
     sheetAdvanced: false, levelsGained: 0, spellLevelBefore: source.spellLevel, spellLevelAfter: source.spellLevel, maxHpGained: 0,
+    ...(source.endgameBalanceVersion === 2 ? { rescueItemsBefore: source.rescueItems!, rescueItemsAfter: run.rescueItems!, rescueItemsGranted: 0 } : {}),
   };
   const effects: PrimeEffect[] = [];
   for (const id of Object.keys(primeDigits) as PrimeRelicId[]) {
@@ -409,7 +431,7 @@ const longestCache = new Map<string, { cells: number[]; length: number }>();
 /** Cache only path-relevant state, independent of selection/render. Bounded by
  * entries, not chain length. A fresh revision/resource/mode/board invalidates. */
 export function longestOrigins(run: Run, skill = false, requested?: SkillId): { cells: number[]; length: number } {
-  const key = JSON.stringify([run.id, run.revision, run.relicBalanceVersion, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
+  const key = JSON.stringify([run.id, run.revision, run.relicBalanceVersion, run.endgameBalanceVersion, run.rescueItems, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
   const cached = longestCache.get(key); if (cached) return { cells: [...cached.cells], length: cached.length };
   const result = { cells: [] as number[], length: 0 };
   for (const cell of legalOrigins(run, skill, requested)) {
@@ -437,7 +459,7 @@ export function resolveAction(source: Run, action: Action): Run {
     if (applyGrowthReward(run, action.relic)) { /* Growth changes only once in this reducer. */ }
     else if (action.relic === 'defense-boon') run.boons.defense = 5;
     else if (action.relic === 'magic-boon') run.boons.magic = 5;
-    else if (action.relic === 'training') { run.spellLevel++; run.maxHp += 4; run.hp = Math.min(run.maxHp, run.hp + 10); }
+    else if (action.relic === 'training') { run.spellLevel++; run.maxHp += 4; run.hp = Math.min(run.maxHp, run.hp + 10); awardRescueItems(run); }
     else if (action.relic === 'vitality') { run.maxHp += 12; run.hp = Math.min(run.maxHp, run.hp + 12); }
     else if (action.relic === 'recovery') run.hp = run.maxHp;
     else if (action.relic === 'skill-upgrade') run.skillRank = 2;
@@ -456,7 +478,7 @@ export function resolveAction(source: Run, action: Action): Run {
       run.lastReport = null; run.rewardStep = 'relic'; run.rewards = run.pendingRelicRewards ?? []; run.pendingRelicRewards = [];
       if (run.rewards.length !== 3) throw new Error('次の遺物報酬を読み込めません。');
     } else {
-    run.stage++; run.balanceVersion = 2; run.relicBalanceVersion = 1; run.enemyRulesVersion = run.expansionVersion ? 1 : 0; run.enemyHealthVersion = 1; nextBoard(run, random); run.encounterSheet = 1;
+    run.stage++; run.balanceVersion = 2; run.relicBalanceVersion = 1; run.enemyRulesVersion = run.expansionVersion ? 1 : 0; run.enemyHealthVersion = 1; activateLimitedRescue(run); nextBoard(run, random); run.encounterSheet = 1;
     run.manaOverflow = Math.min(run.manaOverflow, relicValues(run, 'battery').overflow);
     run.enemyHp = enemyForRun(run).hp;
     if (run.boons.magic) run.mana = 8;

@@ -10,6 +10,7 @@ function lateSave(stage = 19): Save {
   const save = startRun(newSave(), 'fuse', 103), run = save.run!;
   run.stage = stage; run.stats.kills = stage; run.enemyHp = enemyOf(stage).hp;
   delete run.enemyHealthVersion;
+  delete run.endgameBalanceVersion;
   return save;
 }
 

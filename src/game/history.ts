@@ -17,6 +17,7 @@ export interface HistoryCast {
   procs: PrimeProcOutcome[]; relics: Partial<Record<RelicId, HistoryEffect>>;
   fuelBefore: number; fuelAfter: number; tokensBefore: number; tokensAfter: number;
   manaBefore: number; manaAfter: number; charged: number; overflowBefore: number; overflowAfter: number; overflowRestored: number;
+  rescueItemsBefore?: number; rescueItemsAfter?: number; rescueItemsGranted?: number;
   stopReason?: 'limit' | 'no-target' | 'board-complete';
 }
 export interface HistoryReward { gameVersion?: string; revision: number; id: RewardId; name: string; description: string; step: string }
@@ -135,6 +136,11 @@ export function recordHistory(save: Save, before: Run, action: Action, gameVersi
       freeSkill: !!report.freeSkill, score: report.attackScore + (report.defeated ? 500 : 0), procs: structuredClone(report.procs ?? []), relics,
       fuelBefore: before.reservedAuto, fuelAfter: after.reservedAuto, tokensBefore: before.freeSkillTokens, tokensAfter: after.freeSkillTokens,
       manaBefore: before.mana, manaAfter: after.mana, charged: report.charge, overflowBefore: before.manaOverflow, overflowAfter: after.manaOverflow, overflowRestored: report.manaRestored ?? 0, stopReason: report.chain?.stopReason };
+    if (report.rescueItemsBefore !== undefined) {
+      cast.rescueItemsBefore = report.rescueItemsBefore;
+      cast.rescueItemsAfter = report.rescueItemsAfter;
+      cast.rescueItemsGranted = report.rescueItemsGranted;
+    }
     battle.casts.push(cast); battle.maxChain = Math.max(battle.maxChain, cast.chain); battle.received += cast.received; battle.hpLost += cast.hpLost; battle.sheetsCompleted += cast.sheetsCompleted;
     battle.status = report.defeated ? 'victory' : after.phase === 'lost' ? 'lost' : 'battle';
     const total = battle.ledger;

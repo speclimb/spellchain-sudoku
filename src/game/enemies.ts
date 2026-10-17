@@ -4,7 +4,7 @@ import type { Run } from './types';
 export type EnemySymbol = 'ember' | 'wing' | 'guardian' | 'eye' | 'star' | 'dragon' | 'frost' | 'mirror';
 export type EnemyAttackStyle = 'fireball' | 'feathers' | 'pillars' | 'ray' | 'absorption' | 'breath' | 'frost' | 'mirror';
 export type EnemyPattern = 'steady' | 'third-heavy' | 'charge-strike';
-type EnemyRun = Pick<Run, 'stage' | 'balanceVersion' | 'enemyRulesVersion' | 'enemyHealthVersion'>;
+type EnemyRun = Pick<Run, 'stage' | 'balanceVersion' | 'enemyRulesVersion' | 'enemyHealthVersion' | 'endgameBalanceVersion'>;
 type IntentRun = EnemyRun & Pick<Run, 'turn'>;
 type EnemyBase = ReturnType<typeof enemyOf>;
 export interface Enemy extends Omit<EnemyBase, 'symbol'> {
@@ -32,21 +32,38 @@ const EXTRA_ENEMIES = [
 ];
 const ORDINARY_CYCLE = [0, 1, 2, 3, 6, 7] as const;
 const cap = (value: number) => Math.min(Number.MAX_SAFE_INTEGER, value);
+// Version 2 tuning is fixed by encounter depth, independent of player growth.
+// Keep these separate so deterministic balance runs can compare curve candidates.
+export const ENDGAME_ATTACK_SLOPE = 8;
+export const ENDGAME_ATTACK_QUADRATIC_DIVISOR = 160;
+export const ENDGAME_BOSS_HP_RATIO = 8;
+type EndgameBalanceVersion = 0 | 1 | 2;
 
 /** Fixed encounter progression, independent of inventory, level, damage or HP.
  * The opening fifteen encounters retain their original HP. Beyond that, ordinary
  * enemies grow gently while milestones can withstand more of a long spell.
  */
-export function enemyHealthAt(stage: number): number {
+export function enemyHealthAt(stage: number, endgameBalanceVersion: EndgameBalanceVersion = 0): number {
   const base = enemyOf(stage, 2), depth = Math.max(0, stage + 1 - 15);
   const multiplier = base.isBoss ? 1 + .04 * depth + .0015 * depth ** 2 : 1 + .012 * depth;
-  return cap(Math.round(base.hp * multiplier));
+  const hp = cap(Math.round(base.hp * multiplier));
+  // The same encounter's ordinary HP is the fixed reference, never player growth.
+  // Round it before multiplying so the displayed ordinary baseline and cap agree.
+  const bossRatio = endgameBalanceVersion === 2 ? ENDGAME_BOSS_HP_RATIO : 6;
+  const bossCap = cap(cap(Math.round(base.hp * (1 + .012 * depth))) * bossRatio);
+  return endgameBalanceVersion > 0 && base.isBoss ? Math.min(hp, bossCap) : hp;
 }
 
 /** HP/attack balance and enemy rules are versioned independently for saved battles. */
-export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVersion: 0 | 1 = 1, enemyHealthVersion: 0 | 1 = 1): Enemy {
+export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVersion: 0 | 1 = 1, enemyHealthVersion: 0 | 1 = 1, endgameBalanceVersion: EndgameBalanceVersion = 0): Enemy {
   const old = enemyOf(stage, balanceVersion);
-  const hp = balanceVersion === 2 && enemyHealthVersion === 1 ? enemyHealthAt(stage) : old.hp;
+  const hp = balanceVersion === 2 && enemyHealthVersion === 1 ? enemyHealthAt(stage, endgameBalanceVersion) : old.hp;
+  // New encounters opt in together; a missing flag keeps every old counter exact.
+  const attackDepth = Math.max(0, stage + 1 - 50);
+  const attack = balanceVersion === 2 && endgameBalanceVersion > 0 && attackDepth > 0
+    ? cap(227 + (endgameBalanceVersion === 2
+      ? ENDGAME_ATTACK_SLOPE * attackDepth + Math.floor(attackDepth ** 2 / ENDGAME_ATTACK_QUADRATIC_DIVISOR)
+      : 6 * attackDepth)) : old.attack;
   let identity = { name: old.name, title: old.title, symbol: old.symbol as EnemySymbol, lore: old.lore };
   let archetypeIndex = old.archetypeIndex;
   if (enemyRulesVersion === 1 && !old.isBoss) {
@@ -63,12 +80,12 @@ export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVers
   const behavior = pattern === 'charge-strike' ? '溜め（攻撃0）と2倍の突進を交互に行う。'
     : armor ? '被ダメージ20％軽減。行・列・区画を1つ完成すると、その詠唱中だけ解除。'
     : pattern === 'third-heavy' ? '毎手反撃。3手ごとに攻撃力が2倍になる。' : '毎手、同じ攻撃力で反撃する。';
-  return { ...old, hp, ...identity, ...ATTACKS[identity.symbol], archetypeIndex, strongEvery, pattern, armor, behavior };
+  return { ...old, hp, attack, ...identity, ...ATTACKS[identity.symbol], archetypeIndex, strongEvery, pattern, armor, behavior };
 }
 
 /** Missing rules mean a saved, already-started legacy encounter. */
 export function enemyForRun(run: EnemyRun): Enemy {
-  return enemyAt(run.stage, run.balanceVersion, run.enemyRulesVersion ?? 0, run.enemyHealthVersion ?? 0);
+  return enemyAt(run.stage, run.balanceVersion, run.enemyRulesVersion ?? 0, run.enemyHealthVersion ?? 0, run.endgameBalanceVersion ?? 0);
 }
 function attackOn(enemy: Enemy, turn: number): number {
   if (enemy.pattern === 'charge-strike') return turn % 2 === 0 ? 0 : cap(enemy.attack * 2);

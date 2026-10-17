@@ -2,6 +2,7 @@ import { REPEATABLE_REWARDS, characterOf, greaterIds, primeIds, relicOf } from '
 import type { Random } from './sudoku';
 import type { GreaterRelicId, RelicId, RewardId, Run, SkillId } from './types';
 import { MAX_EQUIPPED_SKILLS, SKILLS, relicLevel, relicTierLevel, skillLevel } from './growth';
+import { RELIC_CAPACITY } from './relic-slots';
 
 function canTakeLegacyReward(run: Run, id: RewardId): boolean {
   const boss = run.balanceVersion === 2 && (run.stage + 1) % 5 === 0;
@@ -142,6 +143,15 @@ export function rollRelicRewards(run: Run, random: Random): RewardId[] {
       : upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0]);
   const chosen = [missing, upgrade].filter((id): id is RewardId => id !== undefined);
   if (balanced) {
+    if (run.inventory.length >= RELIC_CAPACITY) {
+      // A full build must always be able to grow without replacing a relic.
+      // Keep an eligible owned evolution, even at Lv.10; otherwise guarantee
+      // training plus a different support reward. Existing menus are untouched.
+      if (!upgrade) chosen.push('training');
+      const repeats: RewardId[] = boss ? [...basicRepeatables, 'magic-boon', 'defense-boon'] : basicRepeatables;
+      chosen.push(...random.shuffle(repeats).filter(id => !chosen.includes(id)).slice(0, 3 - chosen.length));
+      return random.shuffle(chosen);
+    }
     // Usually offer three relics; occasionally reserve one slot for support.
     // If relics run short, support still fills the menu to three choices.
     const relicSlots = candidates.length >= 3 && random.next() < SUPPORT_REWARD_CHANCE ? 2 : 3;

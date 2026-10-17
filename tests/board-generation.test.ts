@@ -62,6 +62,8 @@ describe('chain-friendly fresh board generation', () => {
       const source = bank[sourceIndex];
       expect(isChainFriendly(rawLayout(source)), source.id).toBe(true);
       const run = startRun(newSave(), 'fuse', seed).run!;
+      // This oracle certifies the natural route, without the optional Lv.100 rescue.
+      delete run.endgameBalanceVersion;
       expect(run.puzzleOrder[run.puzzleCursor]).toBe(sourceIndex);
       expect(run.cells.filter(value => !value)).toHaveLength(36);
       run.spellLevel = 100;

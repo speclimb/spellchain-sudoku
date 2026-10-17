@@ -52,7 +52,12 @@ test('boss reward interruption preserves both steps and changes equipment withou
   expect(await readRun(page)).toEqual(second);
   await expect(page.locator('.equipment-slots')).toContainText('固有');
   await page.screenshot({ path: '.runtime/screenshots/desktop-growth-reward.png', fullPage: true, animations: 'disabled', timeout: 15000 });
-  await page.locator(`[data-reward="${second.rewards[0]}"]`).click();
+  // This flow checks equipment persistence; the first shuffled reward may now
+  // be a new relic that legitimately opens the replacement comparison.
+  const safeReward = second.rewards.find(id => ['training', 'vitality', 'recovery', 'magic-boon', 'defense-boon'].includes(id)
+    || second.inventory.some(owned => id === owned || id === `greater:${owned}` || id === `apex:${owned}`));
+  expect(safeReward).toBeDefined();
+  await page.locator(`[data-reward="${safeReward}"]`).click();
   await expect(page.getByRole('dialog', { name: '成長の選択' })).toHaveCount(0);
   const next = await readRun(page);
   expect(next.phase).toBe('battle'); expect(next.stage).toBe(5);

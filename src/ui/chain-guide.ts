@@ -2,6 +2,7 @@ import { col, row } from '../game/sudoku';
 import { chainCapacity } from '../game/engine';
 import type { Preview, Report, Run, SkillId } from '../game/types';
 import { skillLevel, skillOf } from '../game/growth';
+import { canRescueChain, RESCUE_COST, RESCUE_ITEM_LEVEL, RESCUE_ITEM_INTERVAL, rescueMilestonesAt } from '../game/endgame';
 import { outcomeText, retaliationText } from './report-presentation';
 
 export const cellName = (cell: number): string => `${row(cell) + 1}行${col(cell) + 1}列`;
@@ -12,7 +13,10 @@ export function capacityText(run: Run, skill: boolean, report?: Report | null, s
   const extra = run.inventory.includes('echo') || run.inventory.includes('rekindle');
   const carry = run.inventory.includes('wick') && (run.tier.wick ?? 1) >= 2;
   const maximum = carry ? count + 1 : Math.min(count + 1, run.cells.filter(value => !value).length);
-  return `起点1マス ＋ 連鎖詠唱数${count}${extra ? '（遺物で追加あり）' : ` ＝ 最大${maximum}連鎖`}${carry ? ' · 残り連鎖詠唱数を次のシートへ' : ''}${run.reservedAuto ? ` · 七の護符の追加＋${run.reservedAuto}を含む` : ''}${skill && skillId === 'fuse' && skillLevel(run, skillId) >= 2 ? ' · 行き止まりで飛び火あり' : ''}${skill && skillId === 'bridge' ? ' · 行き止まりから確定マスへ橋渡し' : ''}`;
+  const rescue = run.endgameBalanceVersion === 2
+    ? ` · 接続の栞 ${run.rescueItems ?? 0}個（次は術式Lv.${RESCUE_ITEM_LEVEL + rescueMilestonesAt(run.spellLevel) * RESCUE_ITEM_INTERVAL}で1個）${canRescueChain(run) ? ` · 接続救済は1詠唱1個まで・連鎖詠唱数${RESCUE_COST}消費` : ''}`
+    : canRescueChain(run) ? ` · 接続救済1回（${RESCUE_COST}消費）` : '';
+  return `起点1マス ＋ 連鎖詠唱数${count}${extra ? '（遺物で追加あり）' : ` ＝ 最大${maximum}連鎖`}${carry ? ' · 残り連鎖詠唱数を次のシートへ' : ''}${run.reservedAuto ? ` · 七の護符の追加＋${run.reservedAuto}を含む` : ''}${skill && skillId === 'fuse' && skillLevel(run, skillId) >= 2 ? ' · 行き止まりで飛び火あり' : ''}${skill && skillId === 'bridge' ? ' · 行き止まりから確定マスへ橋渡し' : ''}${rescue}`;
 }
 
 export function stopText(report: Report): string {
@@ -43,11 +47,11 @@ export function explainStep(report: Preview, index: number): { title: string; de
   };
   const certainty = step.initiallySingle ? 'このマスは、起点を入れる前から数字が確定していました。' : 'このマスは、ここまでの入力で数字が1つに確定しました。';
   const nearest = step.tiedCells.length > 1 ? '同じ近さの候補があるので、上の行、次に左の列を優先します。' : step.eligibleCells.length > 1 ? 'つながる候補のうち、縦の距離＋横の距離が最も短いマスです。' : 'ここからつながる確定マスは、この1つです。';
-  const title = step.bridge ? `${skillOf('bridge').name}：離れた確定マスへ橋渡し` : step.hop ? `星火連環：同じ数字「${event.value}」へ飛び火` : step.source === 'root' ? `起点：${cellName(step.cell)}に「${event.value}」` : step.source === 'echo' ? `共鳴石：同じ数字「${event.value}」へ飛び火` : `${step.sharedUnits.map(unitName).join('・')}でつながる`;
-  const detail = step.bridge ? `${cellName(step.from!)}で連鎖が行き止まりになったため、残り連鎖詠唱数を1消費し、離れた確定マス${cellName(step.cell)}へ橋渡しして連鎖を続けます。` : step.hop ? `${cellName(step.from!)}で連鎖が行き止まりになったため、残り連鎖詠唱数を1消費して${cellName(step.cell)}へ。直前のマスと同じ数字の空きマスへ飛び、そこから連鎖を続けます。` : step.source === 'root' ? report.skill ? '選んだスキルで、空きマスを正解で埋めます。数字が未確定でも起点にできます。' : `行・列・3×3区画には同じ数字を置けません。このマスに入れられる数字は「${event.value}」だけなので、起点にできます。` : step.source === 'echo' ? `${cellName(step.from!)}から${cellName(step.cell)}へ。連鎖詠唱数を消費せず、起点と同じ正解の数字を持つ近い空きマスを埋めます。次はこの飛び先から連鎖します。` : `${cellName(step.from!)} → ${cellName(step.cell)}に「${event.value}」。${certainty}${nearest}`;
+  const title = step.rescue ? '接続救済：離れた確定マスへ再接続' : step.bridge ? `${skillOf('bridge').name}：離れた確定マスへ橋渡し` : step.hop ? `星火連環：同じ数字「${event.value}」へ飛び火` : step.source === 'root' ? `起点：${cellName(step.cell)}に「${event.value}」` : step.source === 'echo' ? `共鳴石：同じ数字「${event.value}」へ飛び火` : `${step.sharedUnits.map(unitName).join('・')}でつながる`;
+  const detail = step.rescue ? `${cellName(step.from!)}で連鎖が行き止まりになったため、残り連鎖詠唱数を${RESCUE_COST}消費し、最も近い確定マス${cellName(step.cell)}へ再接続します。この消費には移動先の入力1マスを含みます。` : step.bridge ? `${cellName(step.from!)}で連鎖が行き止まりになったため、残り連鎖詠唱数を1消費し、離れた確定マス${cellName(step.cell)}へ橋渡しして連鎖を続けます。` : step.hop ? `${cellName(step.from!)}で連鎖が行き止まりになったため、残り連鎖詠唱数を1消費して${cellName(step.cell)}へ。直前のマスと同じ数字の空きマスへ飛び、そこから連鎖を続けます。` : step.source === 'root' ? report.skill ? '選んだスキルで、空きマスを正解で埋めます。数字が未確定でも起点にできます。' : `行・列・3×3区画には同じ数字を置けません。このマスに入れられる数字は「${event.value}」だけなので、起点にできます。` : step.source === 'echo' ? `${cellName(step.from!)}から${cellName(step.cell)}へ。連鎖詠唱数を消費せず、起点と同じ正解の数字を持つ近い空きマスを埋めます。次はこの飛び先から連鎖します。` : `${cellName(step.from!)} → ${cellName(step.cell)}に「${event.value}」。${certainty}${nearest}`;
   return {
     title: (report.segments?.length ?? 0) > 1 ? `シート${event.sheet} · ${title}` : title, detail,
-    budget: `残り連鎖詠唱数 ${step.remainingBefore} → ${step.remainingAfter}${step.source === 'chain' ? '（1消費）' : '（連鎖詠唱数を消費しない）'}${step.addedAuto ? ` ＋ 再燃の輪で${step.addedAuto}補充` : ''}`,
-    note: step.bridge ? '橋渡しの回数はスキルレベルで決まります。確定マスの中から近さ、上・左の順で選びます。' : step.hop ? `スキルの飛び火は1手に最大${(report.skillLevel ?? 2) >= 10 ? 3 : (report.skillLevel ?? 2) >= 5 ? 2 : 1}回。最も近い同じ数字へ進み、同距離なら上・左を優先します。` : step.source === 'root' ? `連鎖詠唱数の内訳：${trace.bonuses.map(b => `${b.label}${b.amount}`).join(' ＋ ')}。起点は連鎖詠唱数を消費せず、実際の連鎖数には1連鎖として数えます。` : step.source === 'echo' ? `共鳴は行・列・区画や数字の確定に関係なく発動します。${step.tiedCells.length > 1 ? '同距離なら上・左を優先します。' : ''}` : '連鎖の基準は、毎回「直前に埋めたマス」に移ります。最初から確定していたマスにもつながります。',
+    budget: `残り連鎖詠唱数 ${step.remainingBefore} → ${step.remainingAfter}${step.source === 'chain' ? `（${step.rescue ? RESCUE_COST : 1}消費）` : '（連鎖詠唱数を消費しない）'}${step.addedAuto ? ` ＋ 再燃の輪で${step.addedAuto}補充` : ''}`,
+    note: step.rescue ? `${report.rescueItemsBefore !== undefined ? '接続の栞を1個消費。' : ''}接続救済は1詠唱に1回。シートをまたいでも補充せず、追撃は発生しません。同距離なら上・左を優先します。` : step.bridge ? '橋渡しの回数はスキルレベルで決まります。確定マスの中から近さ、上・左の順で選びます。' : step.hop ? `スキルの飛び火は1手に最大${(report.skillLevel ?? 2) >= 10 ? 3 : (report.skillLevel ?? 2) >= 5 ? 2 : 1}回。最も近い同じ数字へ進み、同距離なら上・左を優先します。` : step.source === 'root' ? `連鎖詠唱数の内訳：${trace.bonuses.map(b => `${b.label}${b.amount}`).join(' ＋ ')}。起点は連鎖詠唱数を消費せず、実際の連鎖数には1連鎖として数えます。` : step.source === 'echo' ? `共鳴は行・列・区画や数字の確定に関係なく発動します。${step.tiedCells.length > 1 ? '同距離なら上・左を優先します。' : ''}` : '連鎖の基準は、毎回「直前に埋めたマス」に移ります。最初から確定していたマスにもつながります。',
   };
 }

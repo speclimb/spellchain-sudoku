@@ -360,6 +360,15 @@ html:has(.game-layout){scroll-padding-top:calc(12px + 5rem)}
   .history-build { padding: 12px; }
   .history-build-grid { grid-template-columns: minmax(0, 1fr); }
 }
+/* Keep the archive close button outside its scrolling reading surface. */
+.modal.wide.codex-modal{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:12px;width:min(calc(68rem + 56px),100%);padding:0;overflow:visible;background:none;border:0;box-shadow:none}
+.codex-scroll{grid-column:1;grid-row:1;min-width:0;max-height:inherit;overflow:auto;overscroll-behavior:contain;padding:40px;background:radial-gradient(ellipse at 50% 0,#33332f66,transparent 55%),#131e31;border:1px solid #73634299;border-radius:9px;box-shadow:0 30px 100px #0009;scrollbar-color:#566174 #152134;scrollbar-width:thin}
+.codex-modal>.modal-close{position:static;grid-column:2;grid-row:1;align-self:start;width:44px;height:44px;background:#131e31;border:1px solid #73634299;border-radius:6px}
+.codex-modal>.modal-close:hover{color:var(--gold);border-color:var(--gold)}
+.codex-modal>.modal-close:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+@media(max-width:760px){.modal.wide.codex-modal{grid-template-columns:minmax(0,1fr);gap:8px}.codex-modal>.modal-close{grid-column:1;justify-self:end}.codex-scroll{grid-row:2;max-height:calc(100dvh - 82px);padding:29px 23px}}
+@media(max-width:370px){.codex-scroll{padding:26px 18px}}
+
 /* Growth remains collapsed in the archive; tier changes do not rebuild the modal. */
 .codex-grid{align-items:start}.codex-content{min-width:0;flex:1}.codex-growth{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}.codex-growth summary{cursor:pointer;color:#e1c797;font-size:11px;line-height:1.8;padding:5px 0}.codex-growth summary:focus-visible,.codex-growth select:focus-visible{outline:2px solid var(--gold);outline-offset:3px}.codex-tier-label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;color:#c5d0e0;margin:12px 0}.codex-growth select{font:inherit;background:#101c30;color:#e1c797;border:1px solid #697082;border-radius:4px;padding:7px 12px}.codex-item .codex-growth-note{color:#aebcd1;margin:10px 0}.codex-levels{list-style:none;padding:0;margin:14px 0 0}.codex-levels li{padding:12px 9px;border-top:1px solid var(--line);border-radius:3px}.codex-level-label{font-size:12px;color:#e1c797;font-weight:600;margin-bottom:5px}.codex-level-label span{display:block;font-size:10px;font-weight:400;color:#b3cfbf;margin-top:3px}.codex-levels .current-level{background:#31443d;border:1px solid #86b39c}.codex-item .codex-levels p{color:#c0ccde}.codex-item .codex-owned{color:#a8d2b8;margin-top:8px}@media(max-width:760px){.codex-growth summary{font-size:12px}.codex-tier-label select{min-height:40px}.codex-levels li{padding:12px 7px}}
 .codex-item .codex-owned-effect{color:#c9e6d3;background:#253c32;border-left:2px solid #86b39c;padding:10px;margin:10px 0}

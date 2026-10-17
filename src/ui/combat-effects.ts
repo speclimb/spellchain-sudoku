@@ -62,7 +62,7 @@ export class CombatEffects {
     this.position();
     this.host.dataset.intensity = event.ordinal >= 8 ? 'high' : event.ordinal >= 4 ? 'medium' : 'low';
     this.text('.combat-chain strong', String(event.ordinal));
-    const label = event.hop ? '星火連環 · 飛び火！' : event.units.length ? `${event.units.length}単位完成！` : event.mark === 'weak' ? '弱点に命中！' : event.mark === 'shield' ? '守護を獲得' : event.ordinal >= 8 ? '連鎖大爆発！' : event.ordinal >= 4 ? '連鎖加速！' : '詠唱をつなげ！';
+    const label = event.rescue ? '接続救済 · 再接続！' : event.hop ? '星火連環 · 飛び火！' : event.units.length ? `${event.units.length}単位完成！` : event.mark === 'weak' ? '弱点に命中！' : event.mark === 'shield' ? '守護を獲得' : event.ordinal >= 8 ? '連鎖大爆発！' : event.ordinal >= 4 ? '連鎖加速！' : '詠唱をつなげ！';
     this.phase('chain', label);
     this.complete(event.units);
   }

@@ -8,6 +8,7 @@ import { applyEnemyArmor, enemyForRun } from './enemies';
 import type { Run, Save, RelicId } from './types';
 import { boundHistory, emptyHistory, ensureHistoryRun, historyKey } from './history';
 import { parseHistory } from './history-validation';
+import { canRescueChain, rescueMilestonesAt, RESCUE_COST } from './endgame';
 export const SAVE_KEY = 'chain-incantation.save.v1';
 const integer = (v: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max;
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -60,7 +61,8 @@ export function parseSaveData(data: unknown): Save {
       || (r.rewardStep === 'skill' && ((r.stage+1)%5 !== 0 || r.pendingRelicRewards.length !== 3))
       || (r.rewardStep !== 'skill' && r.pendingRelicRewards.length)) throw new Error('スキルと報酬段階の記録が不正です。');
     if (![1, 2].includes(r.balanceVersion) || ![0, 1].includes(r.enemyHealthVersion) || ![1, 2].includes(r.skillRank) || !integer(r.manaOverflow, 0, 8)
-      || (r.relicBalanceVersion !== undefined && r.relicBalanceVersion !== 1)) throw new Error('成長の記録が不正です。');
+      || (r.relicBalanceVersion !== undefined && r.relicBalanceVersion !== 1)
+      || (r.endgameBalanceVersion !== undefined && ![1, 2].includes(r.endgameBalanceVersion))) throw new Error('成長の記録が不正です。');
     if (!integer(r.seed, 0, 0xffffffff) || !integer(r.randomState, 0, 0xffffffff) || !integer(r.revision) || !integer(r.stage) || !integer(r.turn) || !integer(r.maxHp, 1) || !integer(r.hp, 0, r.maxHp) || !integer(r.mana, 0, 8) || !integer(r.enemyHp, 0, enemyForRun(r as Run).hp) || !integer(r.score)) throw new Error('冒険の数値が不正です。');
     // The original v1 run stored six future boards. Keep that prefix, its current
     // board, HP and reward roll intact, then append all unused sources with a
@@ -81,6 +83,12 @@ export function parseSaveData(data: unknown): Save {
       r.puzzleOrder = [...r.puzzleOrder, ...new Random(r.seed ^ 0x100ca7).shuffle(unused)];
     }
     if (!integer(r.puzzleCursor, 0, bank.length - 1) || !integer(r.sheet, 1) || !integer(r.encounterSheet, 1, r.sheet) || !integer(r.spellLevel, 1, 1000000)) throw new Error('成長の記録が不正です。');
+    if (r.endgameBalanceVersion === 2) {
+      if (!integer(r.rescueMilestones) || r.rescueMilestones !== rescueMilestonesAt(r.spellLevel)
+        || !integer(r.rescueItems, 0, r.rescueMilestones)) throw new Error('接続の栞の記録が不正です。');
+    } else if ((r.rescueItems !== undefined || r.rescueMilestones !== undefined)
+      && (!integer(r.rescueMilestones, 0, rescueMilestonesAt(r.spellLevel))
+        || !integer(r.rescueItems, 0, r.rescueMilestones))) throw new Error('接続の栞の記録が不正です。');
     if (!vector(r.solution, 81, v => integer(v, 1, 9)) || !UNITS.every(u => new Set(u.map(i => r.solution[i])).size === 9) || !vector(r.cells, 81, v => integer(v, 0, 9)) || !r.cells.every((v: number, i: number) => v === 0 || v === r.solution[i]) || !vector(r.givens, 81, v => typeof v === 'boolean') || r.givens.filter(Boolean).length !== 45 || !r.givens.every((v: boolean, i: number) => !v || r.cells[i] !== 0)) throw new Error('盤面の記録が不正です。');
     if (!vector(r.marks, 81, v => v === null || v === 'weak' || v === 'shield') || ['weak', 'shield'].some(kind => r.marks.filter((v: string) => v === kind).length !== 3) || !vector(r.puzzleOrder, bank.length, v => integer(v, 0, bank.length - 1)) || new Set(r.puzzleOrder).size !== bank.length) throw new Error('問題の記録が不正です。');
     if (!relicList(r.inventory) || !relicList(r.pool) || !rewardList(r.rewards) || !r.inventory.every((id: string) => r.pool.includes(id)) || (r.phase === 'reward' && r.rewards.length !== 3)) throw new Error('遺物の記録が不正です。');
@@ -141,6 +149,7 @@ function validateReport(run: Run): void {
       && ['root', 'echo', 'chain'].includes(e.source) && (e.sheet === undefined || integer(e.sheet, 1, r.sheet))
       && (e.sheetStart === undefined || typeof e.sheetStart === 'boolean')
       && (e.hop === undefined || (typeof e.hop === 'boolean' && (!e.hop || e.source === 'chain')))
+      && (e.rescue === undefined || (typeof e.rescue === 'boolean' && (!e.rescue || e.source === 'chain' && !e.hop && !e.bridge && !e.sheetStart)))
       && [null, 'weak', 'shield'].includes(e.mark) && indexes(e.units, 0, 26))
     || !['damage', 'attackScore', 'shield', 'incoming', 'received', 'healed', 'charge', 'units', 'weak', 'hpBefore', 'enemyBefore'].every(k => integer(p[k]))
     || !['skill', 'defeated', 'fullClear'].every(k => typeof p[k] === 'boolean') || !indexes(p.sweep, 0, 80)) fail();
@@ -164,9 +173,20 @@ function validateReport(run: Run): void {
     || r.hp !== Math.min(r.maxHp, hpAfterCounter + p.healed - relicHealed)
     || p.attackScore !== Math.floor(p.damage * (relicValues(r as Run, 'gold').scoreMultiplier))) fail('詠唱の決着記録が不正です。');
   if (p.path[0].source !== 'root' || p.path.slice(1).some((e: any) => e.source === 'root')
+    || p.path.filter((e: any) => e.rescue).length > 1
+    || (p.path.some((e: any) => e.rescue) && (!p.chain || !canRescueChain({ ...run, spellLevel: p.spellLevelBefore ?? run.spellLevel, rescueItems: p.rescueItemsBefore })))
     || p.path.filter((e: any) => e.source === 'echo').length > relicValues(r as Run, 'echo').echoes
     || p.units !== p.path.reduce((sum: number, e: any) => sum + e.units.length, 0)
     || p.weak !== p.path.filter((e: any) => e.mark === 'weak').length) fail();
+  if (run.endgameBalanceVersion === 2) {
+    const beforeLevel = p.spellLevelBefore, afterLevel = p.spellLevelAfter;
+    if (!integer(beforeLevel, 1, 1000000) || !integer(afterLevel, beforeLevel, 1000000)
+      || !integer(p.rescueItemsBefore, 0, rescueMilestonesAt(beforeLevel))
+      || !integer(p.rescueItemsAfter, 0, rescueMilestonesAt(afterLevel))
+      || !integer(p.rescueItemsGranted) || p.rescueItemsGranted !== rescueMilestonesAt(afterLevel) - rescueMilestonesAt(beforeLevel)
+      || p.rescueItemsAfter !== p.rescueItemsBefore - Number(p.path.some((e: any) => e.rescue)) + p.rescueItemsGranted
+      || p.rescueItemsAfter !== run.rescueItems) fail('接続の栞の詠唱記録が不正です。');
+  } else if (['rescueItemsBefore', 'rescueItemsAfter', 'rescueItemsGranted'].some(key => p[key] !== undefined)) fail('接続の栞の詠唱記録が不正です。');
 
   let completed = p.fullClear ? 1 : 0, finalFull = p.fullClear;
   let finalPath = p.path;
@@ -291,6 +311,7 @@ function validateReport(run: Run): void {
       return record(s) && s.cell === event.cell && s.source === event.source && s.sheet === event.sheet
         && (s.sheetStart === undefined || typeof s.sheetStart === 'boolean') && !!s.sheetStart === transition
         && (s.hop === undefined || (typeof s.hop === 'boolean' && (!s.hop || s.source === 'chain'))) && !!s.hop === !!event.hop && !!s.bridge === !!event.bridge
+        && (s.rescue === undefined || typeof s.rescue === 'boolean') && !!s.rescue === !!event.rescue
         && s.from === (i && !transition ? p.path[i - 1].cell : null)
         && (!transition || (s.source === 'chain' && !s.hop)) && indexes(s.sharedUnits, 0, 26) && (!transition || !s.sharedUnits.length)
         && indexes(s.candidateValues, 1, 9) && s.candidateValues.includes(event.value)
@@ -298,7 +319,8 @@ function validateReport(run: Run): void {
         && indexes(s.tiedCells, 0, 80) && s.tiedCells.every((cell: number) => s.eligibleCells.includes(cell))
         && typeof s.initiallySingle === 'boolean' && integer(s.remainingBefore) && integer(s.remainingAfter) && integer(s.addedAuto)
         && s.remainingBefore === (i ? t.steps[i - 1].remainingAfter : t.initialAuto)
-        && s.remainingAfter === s.remainingBefore - (s.source === 'chain' ? 1 : 0) + s.addedAuto;
+        && (!s.rescue || s.remainingBefore >= RESCUE_COST)
+        && s.remainingAfter === s.remainingBefore - (s.source === 'chain' ? s.rescue ? RESCUE_COST : 1 : 0) + s.addedAuto;
     }) || t.remainingAuto !== t.steps[t.steps.length - 1].remainingAfter || (t.stopReason === 'board-complete') !== finalFull
       || (t.stopReason === 'limit' && t.remainingAuto !== 0) || (t.stopReason === 'no-target' && t.remainingAuto === 0)) fail('連鎖の説明が不正です。');
   }
