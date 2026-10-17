@@ -110,6 +110,11 @@ async function ready(page: Page): Promise<void> {
 }
 
 async function finished(page: Page): Promise<void> {
+  // Effect nodes are absent briefly between phases. Wait for the complete cast
+  // lifecycle instead of mistaking that transition for the end of playback.
+  const cast = page.locator('[data-action="cast"]');
+  await expect(cast).toHaveText(/詠唱中/);
+  await expect(cast).not.toHaveText(/詠唱中/);
   await expect(page.locator('.combat-effects, .completion-cutin')).toHaveCount(0);
 }
 
