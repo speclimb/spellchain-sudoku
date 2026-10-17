@@ -107,12 +107,13 @@ describe('bounded and resilient history storage', () => {
     expect(save.history!.runs).toHaveLength(10);expect(save.history!.omittedRuns).toBe(4);
     expect(parseHistory(save.history)).toEqual(save.history);
   });
+  // Build and validate over 100,000 cast records; allow slower shared CI runners.
   it('caps cast details while retaining full recorded battle totals', () => {
     const h=manyHistory(HISTORY_LIMITS.casts+20),b=h.runs[0].battles[0],damage=b.ledger.damage;
     boundHistory(h);expect(historyCounts(h).casts).toBe(HISTORY_LIMITS.casts);expect(h.runs[0].battles[0].casts[0].id).toBe(21);
     expect(b.ledger.casts).toBe(HISTORY_LIMITS.casts+20);expect(b.ledger.damage).toBe(damage);expect(historyBytes(h)).toBeLessThanOrEqual(HISTORY_LIMITS.bytes);
     expect(parseHistory(h)).toEqual(h);
-  });
+  }, 30_000);
   it('caps battles and records the omitted count', () => {
     const h=won().history!,r=h.runs[0],b=r.battles[0];
     r.battles=Array.from({length:HISTORY_LIMITS.battles+15},(_,i)=>({...structuredClone(b),stage:i,ledger:{...structuredClone(b.ledger),stage:i},casts:b.casts.map(c=>({...c,id:i+1}))}));

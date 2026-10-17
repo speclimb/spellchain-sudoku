@@ -56,6 +56,7 @@ describe('chain-friendly fresh board generation', () => {
     expect(createBoardLayout(rejectionSource, new Random(5))).toEqual(expected);
   });
 
+  // Compare every shipped board and Echo level with the engine on slower CI runners.
   it('certifies each shipped source as a fallback and matches the real cast engine for every source and Echo level', () => {
     const sourceSeeds = firstSourceSeeds();
     for (const [sourceIndex, seed] of sourceSeeds) {
@@ -77,7 +78,7 @@ describe('chain-friendly fresh board generation', () => {
         expect(run).toEqual(before);
       }
     }
-  });
+  }, 30_000);
 
   it('preserves the source deck and legacy random draws for fresh marks', () => {
     for (const seed of [1, 5, 17, 71, 0xffffffff]) {

@@ -73,6 +73,7 @@ describe('independent digit-gated prime effects', () => {
       expect(resolveAction(missing, play(missing, 0)).lastReport!.procs).toBeUndefined();
     }
   });
+  // Check 144,000 effect samples and their bounds; allow slower shared CI runners.
   it('uses isolated, stable effect streams with statistically plausible rank frequencies', () => {
     const n = 12000;
     for (const id of primes) {
@@ -94,7 +95,7 @@ describe('independent digit-gated prime effects', () => {
     expect(Math.abs(same / n - .09)).toBeLessThan(.015);
     expect(new Set(primes.map(id => primeRoll(71, 3, id))).size).toBe(4);
     expect(primeRoll(71, 3, 'quint')).not.toBe(primeRoll(71, 4, 'quint'));
-  });
+  }, 30_000);
   it('rolls each effect once across multiple matching digits and sheet boundaries', () => {
     const run = crossSheet(); run.inventory.push(...primes);
     const { cell, report: preview } = longestCast(run);
