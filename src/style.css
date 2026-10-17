@@ -326,13 +326,24 @@
 
 /* Keep the single primary action directly after HP/mana. Reserve scroll
    clearance so keyboard focus and scrollIntoView stay below the sticky rail. */
-html:has(.game-layout){scroll-padding-top:calc(12px + 5rem)}
+html:has(.game-layout){scroll-padding-top:calc(12px + 9rem)}
 .command-panel{align-self:stretch}
 .command-panel>.cast-controls~*,.command-panel .cast-controls~* :is(button,summary){scroll-margin-top:8px}
 .cast-controls{position:sticky;top:12px;z-index:3;margin:14px 0 18px;flex-shrink:0;background:#101a2c;border-radius:4px;box-shadow:0 6px 16px #070e1b66}
 .cast-controls .cast-button{min-height:56px;gap:12px}
 .cast-controls .cast-label{font-size:inherit;text-align:left;min-width:0}
 .cast-controls .cast-shortcut{display:flex;align-items:center;gap:12px;flex-shrink:0;font-size:inherit}
+.autoplay-button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:48px;padding:8px 12px;border:1px solid #667b91;border-radius:4px;background:#182639;color:#d8e4ee;text-align:left}
+.cast-controls .autoplay-button{margin-top:6px}
+.autoplay-button>span{min-width:0}
+.autoplay-button strong{display:block;font-size:var(--text-body,1rem);font-weight:500;letter-spacing:.04em}
+.autoplay-button small{display:block;margin-top:3px;font-size:var(--text-label,.875rem);line-height:1.5;color:#b8c9d9}
+.autoplay-button kbd{flex-shrink:0;font:500 11px var(--sans,sans-serif);padding:3px 7px;border:1px solid #8193a8;border-radius:4px}
+.autoplay-button.active{background:#23463e;border-color:#8bc7ac;color:#def6df}
+.autoplay-button.active small{color:#c7dfce}
+.autoplay-button:disabled{opacity:.6;cursor:default}
+.autoplay-button:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.reward-autoplay{margin:12px 0}
 .rescue-choice{margin-top:12px}
 .rescue-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;padding:9px 12px;border:1px solid #65758c;border-radius:5px;background:#182639;text-align:left;color:#d2dce8}
 .rescue-toggle>span{min-width:0}
@@ -350,6 +361,8 @@ html:has(.game-layout){scroll-padding-top:calc(12px + 5rem)}
   .command-panel{display:flex;flex-direction:column;gap:7px}
   .cast-controls{top:8px;margin:0}
   .cast-controls .cast-button{min-height:48px}
+  .autoplay-button strong{font-size:.875rem}
+  .autoplay-button small{font-size:.75rem}
   .rescue-choice{margin-top:4px}
 }
 

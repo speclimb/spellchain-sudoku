@@ -172,11 +172,13 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
     await page.locator(`[data-cell="${fixture.cell}"]`).click(); await samePosition();
     await expect(cast).toBeEnabled();
 
-    // Focus order follows the same HP/mana → cast → forecast → skill layout.
+    // Focus order follows the same HP/mana → cast → autoplay → forecast → skill layout.
     if (viewport.width > 760) await page.locator('.player-heading [data-action="home"]').focus();
     else await page.locator(`[data-cell="${fixture.cell}"]`).focus();
     await page.keyboard.press('Tab'); await expect(cast).toBeFocused();
+    await page.keyboard.press('Tab'); await expect(page.locator('[data-action="autoplay"]')).toBeFocused();
     await page.keyboard.press('Tab'); await expect(page.locator('[data-action="chain-guide"]')).toBeFocused();
+    await page.keyboard.press('Shift+Tab'); await expect(page.locator('[data-action="autoplay"]')).toBeFocused();
     await page.keyboard.press('Shift+Tab'); await expect(cast).toBeFocused();
     await samePosition();
     await page.screenshot({ path: `.runtime/screenshots/cast-below-vitals-${viewport.width}.png`, fullPage: true });

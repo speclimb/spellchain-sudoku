@@ -4,6 +4,7 @@ import './style.css';
 import './ui/readability.css';
 import { CHARACTERS, RELICS, characterOf, relicOf, rewardOf, rewardProgression, relicDescription } from './game/content';
 import { canUseSkill, chainBonus, dispatch, incomingAttack, legalOrigins, longestOrigins, newSave, previewAction, sheetShield, spellMultiplier, startRun } from './game/engine';
+import { selectAutoplayOrigin } from './game/autoplay';
 import { enemyAt, enemyForRun, enemyIntent } from './game/enemies';
 import { RESCUE_COST, RESCUE_ITEM_LEVEL } from './game/endgame';
 import { ownedSkills, relicLevel, relicTierLabel, relicValues, skillDescriptionFor, skillLevel, skillOf } from './game/growth';
@@ -44,6 +45,11 @@ let guideOpen = false, guideIndex = 0;
 let board: Board | null = null;
 let boardLoading = false;
 let skipAnimation = false, activeEffects: CombatEffects | null = null;
+// Autoplay belongs to this open page, never to the saved adventure.
+let autoplay = false, autoplaySaveFailed = false, pageSuspended = false;
+let autoplayTimer: number | undefined;
+let autoplayPending: { runId: string; revision: number; cell: number } | null = null;
+const AUTOPLAY_PREVIEW_MS = 350;
 const demoRun = startRun(newSave(), 'fuse', 21).run!;
 const demoRoot = demoRun.cells.findIndex((n, i) => !n && candidates(demoRun.cells, i).length === 1);
 const demoPath = previewAction(demoRun, demoRoot).path;
@@ -53,20 +59,100 @@ const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt
 const activeRun = () => save.run && (save.run.phase === 'battle' || save.run.phase === 'reward');
 let saving = false, saveBlocked = false;
 const persistNow = async () => {
+  cancelAutoplayStep();
   saving = true; app.setAttribute('aria-busy', 'true');
-  const controls = [...app.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)')];
+  const controls = [...app.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled)')].filter(control => !(autoplay && control.dataset.action === 'autoplay'));
   const focusedControl = controls.find(control => control === document.activeElement);
   for (const control of controls) control.disabled = true;
   try {
     const result = await storage.persist(save);
     if (result.history) save.history = result.history;
     warning = result.warning; saveBlocked ||= !!result.conflict;
+    autoplaySaveFailed = !result.saved;
+    if (!result.saved) stopAutoplay('保存できなかったため、オートを停止しました。');
+  } catch {
+    autoplaySaveFailed = true;
+    warning = '進行を保存できませんでした。以前の保存は消していません。';
+    stopAutoplay('保存できなかったため、オートを停止しました。');
   } finally {
     saving = false; app.setAttribute('aria-busy', 'false');
     for (const control of controls) if (control.isConnected) control.disabled = false;
     if (focusedControl?.isConnected && document.activeElement === document.body) focusedControl.focus({ preventScroll: true });
+    refreshAutoplayControls();
+    scheduleAutoplay();
   }
 };
+
+function cancelAutoplayStep(): void {
+  window.clearTimeout(autoplayTimer); autoplayTimer = undefined; autoplayPending = null;
+}
+function stopAutoplay(message = ''): void {
+  const wasOn = autoplay;
+  autoplay = false; cancelAutoplayStep();
+  if (wasOn && message) feedback = message;
+  refreshAutoplayControls();
+}
+function autoplayReady(): boolean {
+  return autoplay && view === 'battle' && save.run?.phase === 'battle' && !modal && !pendingReward && !guideOpen
+    && !document.hidden && !pageSuspended && !busy && !saving && !saveBlocked && !autoplaySaveFailed && !!board;
+}
+function autoplayState(): string {
+  if (!autoplay) return '最長連鎖 → 確定ダメージ最大';
+  if (busy) return '詠唱中 · 停止すると次の手から手動';
+  if (save.run?.phase === 'reward') return '報酬の選択待ち · 選択完了後に再開';
+  if (modal || guideOpen || view !== 'battle' || document.hidden || pageSuspended) return '一時停止中 · 戻ると再開';
+  return 'スキル・接続の栞を使わず自動詠唱';
+}
+function autoplayButton(): string {
+  const disabled = !autoplay && (saving || saveBlocked || autoplaySaveFailed || busy || !activeRun());
+  return `<button class="autoplay-button ${autoplay ? 'active' : ''}" data-action="autoplay" aria-pressed="${autoplay}" aria-keyshortcuts="A" title="A キーでオートを切り替える" ${disabled ? 'disabled' : ''}><span><strong>オート ${autoplay ? 'ON' : 'OFF'}</strong><small data-autoplay-status>${autoplayState()}</small></span><kbd aria-hidden="true">A</kbd></button>`;
+}
+function refreshAutoplayControls(): void {
+  for (const button of app.querySelectorAll<HTMLButtonElement>('[data-action="autoplay"]')) {
+    button.classList.toggle('active', autoplay);
+    button.setAttribute('aria-pressed', String(autoplay));
+    button.disabled = !autoplay && (saving || saveBlocked || autoplaySaveFailed || busy || !activeRun());
+    button.querySelector('strong')!.textContent = `オート ${autoplay ? 'ON' : 'OFF'}`;
+    button.querySelector('[data-autoplay-status]')!.textContent = autoplayState();
+  }
+}
+function toggleAutoplay(): void {
+  if (autoplay) {
+    stopAutoplay(busy ? 'オートを停止しました。詠唱中の一手が終わると手動に戻ります。' : 'オートを停止しました。');
+    // Rebuilding the board here would interrupt the committed animation.
+    if (!busy && !saving) render();
+    return;
+  }
+  if (view !== 'battle' || !activeRun() || modal || busy || saving || saveBlocked || autoplaySaveFailed || document.hidden || pageSuspended) return;
+  autoplay = true; skill = false; useRescue = false; selected = null; prediction = null; guideOpen = false; guideIndex = 0; feedback = '';
+  if (save.settings.sound) audio.unlock();
+  render();
+}
+function scheduleAutoplay(): void {
+  if (!autoplayReady()) { cancelAutoplayStep(); return; }
+  if (autoplayTimer !== undefined) return;
+  const { id, revision } = save.run!;
+  autoplayTimer = window.setTimeout(() => {
+    autoplayTimer = undefined;
+    if (!autoplayReady()) { cancelAutoplayStep(); return; }
+    if (save.run!.id !== id || save.run!.revision !== revision) { cancelAutoplayStep(); scheduleAutoplay(); return; }
+    try {
+      if (autoplayPending?.runId === id && autoplayPending.revision === revision && autoplayPending.cell === selected) {
+        autoplayPending = null;
+        void cast(true);
+      } else {
+        const choice = selectAutoplayOrigin(save.run!);
+        if (!choice) { stopAutoplay('通常詠唱できる起点がないため、オートを停止しました。'); render(); return; }
+        skill = false; useRescue = false; selected = choice.cell; prediction = choice.preview;
+        autoplayPending = { runId: id, revision, cell: choice.cell };
+        render();
+      }
+    } catch (error) {
+      stopAutoplay(`オートを停止しました。${error instanceof Error ? error.message : '起点を選べませんでした。'}`);
+      render();
+    }
+  }, autoplayPending ? AUTOPLAY_PREVIEW_MS : 0);
+}
 
 function soundLabels(enabled: boolean): { state: string; action: string; accessibleName: string } {
   const state = enabled ? '音あり' : '音なし', action = enabled ? '消音する' : '音をオンにする';
@@ -113,7 +199,7 @@ function replacementLoss(run: Run, id: RelicId): string {
 }
 function replacementReward(run: Run, id: RewardId): string {
   const incoming = rewardOf(id, run), baseId = rewardRelicId(run, id)!;
-  return `<div class="modal-eyebrow">RELIC EXCHANGE · ${run.inventory.length} / ${Math.max(RELIC_CAPACITY, run.inventory.length)}</div>${run.rewardStep === 'relic' && enemyForRun(run).isBoss ? '<p class="replacement-stage">✓ スキル選択は保存済み · 2/2 遺物</p>' : ''}<h2>入れ替える遺物を選ぶ</h2><p class="modal-intro">所持枠が満杯です。交換する1つを選んでください。<br>外した遺物の育成は保存し、報酬で再取得すると復帰します。</p><article class="replacement-incoming"><span class="relic-symbol">${incoming.symbol}</span><div><span class="relic-kind">迎え入れる遺物${run.stowedRelics?.[baseId] ? ' · 育成状態を復元' : ''}</span><h3>${esc(incoming.name)}</h3><p>${esc(incoming.description)}</p></div></article><p class="replacement-label">手放す遺物を選ぶ · クリックで交換を確定</p><div class="replacement-grid">${run.inventory.map(relicId => { const item = relicOf(relicId), loss = replacementLoss(run, relicId); return `<button class="replacement-card" data-replace="${relicId}"><span class="relic-symbol">${item.symbol}</span><span class="replacement-copy"><span class="relic-kind">${item.kind}</span><strong>${esc(item.name)}</strong>${relicBadge(run, relicId)}<span class="replacement-description">${esc(relicDescription(relicId, run))}</span>${loss ? `<span class="replacement-loss">${esc(loss)}</span>` : ''}</span><span class="take-relic">この遺物と入れ替える <b>↗</b></span></button>`; }).join('')}</div><div class="replacement-actions"><button class="secondary" data-action="reward-back">報酬の選択に戻る</button><p class="quiet">確定するまで遺物は変わりません。</p></div><div class="history-entry"><button class="text-button" data-action="history-reward" aria-haspopup="dialog">プレイ履歴を見る →</button></div>${run.inventory.length > RELIC_CAPACITY ? '<p class="quiet modal-footnote">所持枠を超えた遺物も使えます。入れ替えても所持数は変わりません。</p>' : ''}`;
+  return `<div class="modal-eyebrow">RELIC EXCHANGE · ${run.inventory.length} / ${Math.max(RELIC_CAPACITY, run.inventory.length)}</div>${run.rewardStep === 'relic' && enemyForRun(run).isBoss ? '<p class="replacement-stage">✓ スキル選択は保存済み · 2/2 遺物</p>' : ''}<h2>入れ替える遺物を選ぶ</h2><p class="modal-intro">所持枠が満杯です。交換する1つを選んでください。<br>外した遺物の育成は保存し、報酬で再取得すると復帰します。</p><article class="replacement-incoming"><span class="relic-symbol">${incoming.symbol}</span><div><span class="relic-kind">迎え入れる遺物${run.stowedRelics?.[baseId] ? ' · 育成状態を復元' : ''}</span><h3>${esc(incoming.name)}</h3><p>${esc(incoming.description)}</p></div></article><p class="replacement-label">手放す遺物を選ぶ · クリックで交換を確定</p><div class="replacement-grid">${run.inventory.map(relicId => { const item = relicOf(relicId), loss = replacementLoss(run, relicId); return `<button class="replacement-card" data-replace="${relicId}"><span class="relic-symbol">${item.symbol}</span><span class="replacement-copy"><span class="relic-kind">${item.kind}</span><strong>${esc(item.name)}</strong>${relicBadge(run, relicId)}<span class="replacement-description">${esc(relicDescription(relicId, run))}</span>${loss ? `<span class="replacement-loss">${esc(loss)}</span>` : ''}</span><span class="take-relic">この遺物と入れ替える <b>↗</b></span></button>`; }).join('')}</div><div class="replacement-actions"><button class="secondary" data-action="reward-back">報酬の選択に戻る</button><p class="quiet">確定するまで遺物は変わりません。</p></div><div class="reward-autoplay">${autoplayButton()}</div><div class="history-entry"><button class="text-button" data-action="history-reward" aria-haspopup="dialog">プレイ履歴を見る →</button></div>${run.inventory.length > RELIC_CAPACITY ? '<p class="quiet modal-footnote">所持枠を超えた遺物も使えます。入れ替えても所持数は変わりません。</p>' : ''}`;
 }
 function usableSkills(run: Run): SkillId[] {
   return [run.character, ...(run.equippedSkills ?? []).filter(id => id !== run.character)];
@@ -125,7 +211,7 @@ function currentSkill(run: Run): SkillId {
 function skillPicker(run: Run): string {
   const available = usableSkills(run);
   if (available.length < 2) return '';
-  return `<div class="skill-picker" role="group" aria-label="使うスキル"><span>1詠唱に1つ</span>${available.map(id => `<button data-select-skill="${id}" aria-pressed="${currentSkill(run) === id}" ${busy ? 'disabled' : ''}><b>${skillOf(id).symbol}</b>${esc(skillOf(id).name)}<small>Lv.${skillLevel(run, id)}</small></button>`).join('')}</div>`;
+  return `<div class="skill-picker" role="group" aria-label="使うスキル"><span>1詠唱に1つ</span>${available.map(id => `<button data-select-skill="${id}" aria-pressed="${currentSkill(run) === id}" ${busy || autoplay ? 'disabled' : ''}><b>${skillOf(id).symbol}</b>${esc(skillOf(id).name)}<small>Lv.${skillLevel(run, id)}</small></button>`).join('')}</div>`;
 }
 function equipmentEditor(run: Run): string {
   if (!run.expansionVersion) return '';
@@ -151,8 +237,8 @@ function castControls(run: Run): string {
   const label = busy ? '詠唱中…' : selected === null ? '起点を選んでください' : skill ? 'スキルを詠唱する' : `「${run.solution[selected]}」を詠唱する`;
   const stock = run.rescueItems ?? 0;
   const rescue = run.endgameBalanceVersion === 2 && (stock > 0 || run.spellLevel >= RESCUE_ITEM_LEVEL)
-    ? `<div class="rescue-choice"><button class="rescue-toggle ${useRescue ? 'active' : ''}" data-action="rescue-toggle" aria-pressed="${useRescue}" aria-describedby="rescue-choice-help" ${busy || saveBlocked || !stock || run.phase !== 'battle' ? 'disabled' : ''}><span><strong>接続の栞を使う</strong><small>所持 ${stock}個 · この詠唱だけ</small></span><b>${useRescue ? '✓ 選択中' : stock ? '温存中' : '栞なし'}</b></button><p id="rescue-choice-help">再接続する時だけ1個＋連鎖詠唱数${RESCUE_COST}を消費。不要なら栞は残ります。</p></div>` : '';
-  return `${rescue}<div class="cast-controls"><button class="primary cast-button" data-action="cast" aria-keyshortcuts="C" title="C キーで詠唱" ${!prediction || busy ? 'disabled' : ''}><span class="cast-label">${label}${useRescue ? '<small class="cast-rescue-label">接続の栞を使う</small>' : ''}</span><span class="cast-shortcut"><kbd>C</kbd><span aria-hidden="true">${busy ? '⋯' : '↗'}</span></span></button></div>`;
+    ? `<div class="rescue-choice"><button class="rescue-toggle ${useRescue ? 'active' : ''}" data-action="rescue-toggle" aria-pressed="${useRescue}" aria-describedby="rescue-choice-help" ${busy || autoplay || saveBlocked || !stock || run.phase !== 'battle' ? 'disabled' : ''}><span><strong>接続の栞を使う</strong><small>所持 ${stock}個 · この詠唱だけ</small></span><b>${useRescue ? '✓ 選択中' : stock ? '温存中' : '栞なし'}</b></button><p id="rescue-choice-help">再接続する時だけ1個＋連鎖詠唱数${RESCUE_COST}を消費。不要なら栞は残ります。</p></div>` : '';
+  return `${rescue}<div class="cast-controls"><button class="primary cast-button" data-action="cast" aria-keyshortcuts="C" title="C キーで詠唱" ${!prediction || busy || autoplay ? 'disabled' : ''}><span class="cast-label">${label}${useRescue ? '<small class="cast-rescue-label">接続の栞を使う</small>' : ''}</span><span class="cast-shortcut"><kbd>C</kbd><span aria-hidden="true">${busy ? '⋯' : '↗'}</span></span></button>${run.phase === 'battle' || busy ? autoplayButton() : ''}</div>`;
 }
 function lastSpell(report: Report): string {
   return `<details class="last-spell" ${report.oneCastClear ? 'open' : ''}><summary>${report.oneCastClear ? '✦ 一詠全成！ 前の詠唱' : '前の詠唱'}</summary><p>${report.path.length}連鎖 · ${fmt(report.damage)}ダメージ<br>完成 ${report.units}単位 · 反撃 ${report.received}<br>回復 ${report.healed}${report.relicHealed ? `（反撃前 ${report.relicHealed}・成長 ${report.healed - report.relicHealed}）` : ''}<br>${report.skill ? `${report.freeSkill ? '詠唱符1枚でスキルを詠唱 · 魔力・蓄電の消費なし' : `${report.skillId ? skillOf(report.skillId).name : '固有スキル'}を使用`}${report.manaRestored ? ` · 蓄電から魔力${report.manaRestored}を引継ぎ` : ''}` : `魔力 ＋${report.charge}`} ${report.manaOverflow ? `· 蓄電 ${report.manaOverflow}` : ''}<br>${esc(stopText(report))}${report.sweep.length ? `<br>敵撃破の一掃 ${report.sweep.length}マス（連鎖・完成加算の対象外）` : ''}</p>${breakdown(report)}</details>`;
@@ -171,9 +257,9 @@ function battle(run: Run): string {
   return `<section class="adventure-heading"><div class="endless-track" aria-label="第${run.stage + 1}戦、第${enemy.cycle}巡"><strong>第${run.stage + 1}戦</strong><span>第${enemy.cycle}巡</span><div class="boss-track" title="第${milestone}戦はボス">${track}</div><small>${enemy.isBoss ? 'BOSS' : `ボスまで ${milestone - run.stage - 1}戦`}</small></div><div class="run-score"><span>SCORE</span><strong>${fmt(run.score)}</strong></div></section>
   <section class="game-layout"><div class="battlefield"><div class="enemy-card ${enemy.isBoss ? 'boss' : ''}"><div class="enemy-portrait">${emblem(enemy.symbol)}</div><div class="enemy-info"><div class="enemy-overline"><span>${enemy.isBoss ? `第${enemy.cycle}巡のボス` : `ENCOUNTER ${String(run.stage + 1).padStart(2, '0')}`}</span><span>${run.turn + 1}手目</span></div><h1>${enemy.name}</h1><div class="enemy-health"><div class="health-track"><i style="width:${run.enemyHp / enemy.hp * 100}%"></i>${p ? `<b title="確定ダメージの予告" style="width:${Math.min(run.enemyHp, p.damage) / enemy.hp * 100}%;left:${Math.max(0, run.enemyHp - p.damage) / enemy.hp * 100}%"></b>` : ''}</div><span>${fmt(run.enemyHp)}<small> / ${fmt(enemy.hp)}</small></span></div></div><div class="enemy-intent ${attack > enemy.attack ? 'danger' : ''}"><span>${esc(intent.label)}</span><strong>⚔ ${attack}</strong><small>${esc(intent.warning)}</small></div></div>
   <p class="enemy-behavior"><span>${esc(enemy.attackName)}</span>${esc(enemy.behavior)}</p><div class="sheet-status"><span>${guideOpen ? '予告シート' : 'シート'} <b>${shownEncounterSheet}</b><small>通算 ${previewSheet}枚目</small></span><span class="spell-growth" title="シート完成と敵撃破でレベルアップ。連鎖詠唱数、攻撃倍率、最大HPが上がります。">術式 Lv.${run.spellLevel}<b>連鎖詠唱数＋${chainBonus(run.spellLevel)}</b><b>攻撃 ×${numberText(spellMultiplier(run.spellLevel))}</b></span></div>${tutorial(run)}<div id="board-slot"></div>${longest ? `<p class="longest-origins" data-length="${longest.length}" data-count="${longest.cells.length}"><span>★ 最長の起点</span> 最長 <b>${longest.length}連鎖</b> · 起点 <b>${longest.cells.length}マス</b><small>ダメージは各予告で比較</small></p>` : ''}${guideOnSide ? '' : guidance}
-  <div class="board-legend"><span class="root-legend"><i>○</i>${skill ? '選べる起点' : '確定した起点'}（線の中でも選び直せます）</span><span class="selected-legend">● 選択中</span><span class="path-legend">─ 連鎖の予告</span><span class="weak-text">✧ 弱点 ＋${lens.weakDamage}${lens.weakRootDamage ? `（起点ならさらに＋${lens.weakRootDamage}）` : ''}</span><span class="shield-text">◇ 守護 ＋6</span><span class="sheet-ward" title="獲得した守護は、シート完成時の反撃まで毎回有効。次のシートで0に戻ります。">守護 <b>${sheetShield(run)}</b><small>シート内で継続</small></span></div><p class="battle-lore">${enemy.lore}</p></div>
+  <div class="board-legend"><span class="root-legend"><i>○</i>${autoplay ? 'オートが起点を選択（OFFで手動）' : `${skill ? '選べる起点' : '確定した起点'}（線の中でも選び直せます）`}</span><span class="selected-legend">● 選択中</span><span class="path-legend">─ 連鎖の予告</span><span class="weak-text">✧ 弱点 ＋${lens.weakDamage}${lens.weakRootDamage ? `（起点ならさらに＋${lens.weakRootDamage}）` : ''}</span><span class="shield-text">◇ 守護 ＋6</span><span class="sheet-ward" title="獲得した守護は、シート完成時の反撃まで毎回有効。次のシートで0に戻ります。">守護 <b>${sheetShield(run)}</b><small>シート内で継続</small></span></div><p class="battle-lore">${enemy.lore}</p></div>
   <aside class="command-panel"><div class="player-heading"><span class="player-symbol">${character.symbol}</span><div><span class="micro">YOUR INCANTATION</span><h2>${character.name}</h2></div><button class="tiny-button" data-action="home">中断</button></div><div class="vitals"><div class="vital-health"><div><span>生命力</span><strong>${run.hp}<small> / ${run.maxHp}</small></strong></div><div class="health-track player"><i style="width:${run.hp / run.maxHp * 100}%"></i></div></div><div class="vital-mana"><div><span>魔力</span><strong>${run.mana}<small> / 8</small></strong></div><div class="mana-pips">${Array.from({ length: 8 }, (_, i) => `<i class="${i < run.mana ? 'full' : ''}"></i>`).join('')}</div>${run.inventory.includes('battery') ? `<div class="mana-reserve" title="魔力8を超えた充電を${relicValues(run, 'battery').overflow}まで蓄えます。魔力を消費するスキルの詠唱後、蓄電を魔力に戻します。"><span>蓄電</span><b>${run.manaOverflow} / ${relicValues(run, 'battery').overflow}</b><small>魔力消費後に引継ぎ</small></div>` : ''}</div></div>${castControls(run)}${run.freeSkillTokens || run.reservedAuto || run.boons.defense || run.boons.magic ? `<div class="spell-resources" aria-label="詠唱符・次の詠唱の効果・祝福">${run.freeSkillTokens ? `<span class="free-skill-tokens" title="1枚でスキルを詠唱し、魔力・蓄電を消費しません。魔力より先に使います。">Ⅴ 詠唱符 <b>${run.freeSkillTokens}枚</b><small>1枚でスキルを詠唱 · 魔力より先に使用 · 魔力・蓄電の消費なし</small></span>` : ''}${run.reservedAuto ? `<span class="reserved-auto">Ⅶ 次の詠唱 <b>連鎖詠唱数＋${run.reservedAuto}</b></span>` : ''}${run.boons.defense ? `<span class="defense-boon">守護の祝福 <b>残り${run.boons.defense}戦</b></span>` : ''}${run.boons.magic ? `<span class="magic-boon">魔力の祝福 <b>残り${run.boons.magic}戦</b></span>` : ''}</div>` : ''}${guideOnSide ? guidance : ''}${predictionCard(run, p)}${skillPicker(run)}
-  <button class="skill-button ${skill ? 'active' : ''} ${ready ? 'ready' : ''}" data-action="skill" ${!ready || busy ? 'disabled' : ''} aria-pressed="${skill}"><span class="skill-icon">${selectedSpell.symbol}</span><span><strong>${esc(selectedSpell.name)} <em class="skill-rank">Lv.${skillLevel(run, activeSkill)}</em></strong><small>${skill ? 'スキル選択中 · 解除する' : ready ? run.freeSkillTokens > 0 ? '詠唱符1枚を優先 · 魔力・蓄電の消費なし' : '魔力8を消費して詠唱' : '通常詠唱で魔力をためる'}</small></span><b>${skill ? '✓' : ready ? '↗' : `${run.mana}/8`}</b></button><p class="skill-description">${esc(capacityText(run, skill, p, activeSkill, useRescue))}<br>${skill ? esc(skillDescriptionFor(run, activeSkill)) : '直前のマスと同じ行・列・3×3区画の確定マスへ。'}</p>${busy ? '<button class="animation-skip" data-action="skip-animation">演出をスキップ →</button>' : ''}<p class="feedback" role="status">${esc(feedback || (run.afterglow ? `残光の灯：次の通常詠唱は連鎖詠唱数＋${relicValues(run, 'afterglow').afterglowAuto}` : '考えている間、敵は動きません。'))}</p>
+  <button class="skill-button ${skill ? 'active' : ''} ${ready ? 'ready' : ''}" data-action="skill" ${!ready || busy || autoplay ? 'disabled' : ''} aria-pressed="${skill}"><span class="skill-icon">${selectedSpell.symbol}</span><span><strong>${esc(selectedSpell.name)} <em class="skill-rank">Lv.${skillLevel(run, activeSkill)}</em></strong><small>${skill ? 'スキル選択中 · 解除する' : ready ? run.freeSkillTokens > 0 ? '詠唱符1枚を優先 · 魔力・蓄電の消費なし' : '魔力8を消費して詠唱' : '通常詠唱で魔力をためる'}</small></span><b>${skill ? '✓' : ready ? '↗' : `${run.mana}/8`}</b></button><p class="skill-description">${esc(capacityText(run, skill, p, activeSkill, useRescue))}<br>${skill ? esc(skillDescriptionFor(run, activeSkill)) : '直前のマスと同じ行・列・3×3区画の確定マスへ。'}</p>${busy ? '<button class="animation-skip" data-action="skip-animation">演出をスキップ →</button>' : ''}<p class="feedback" role="status">${esc(feedback || (run.afterglow ? `残光の灯：次の通常詠唱は連鎖詠唱数＋${relicValues(run, 'afterglow').afterglowAuto}` : '考えている間、敵は動きません。'))}</p>
   <details class="inventory" ${run.inventory.length ? '' : 'open'}><summary>所持している遺物 <span>${run.inventory.length} / ${Math.max(RELIC_CAPACITY, run.inventory.length)}</span></summary><div>${run.inventory.length ? run.inventory.map(id => { const relic = relicOf(id); return `<div class="inventory-item" data-relic="${id}"><span>${relic.symbol}</span><div><strong>${relic.name}</strong>${relicBadge(run, id)}<p>${esc(relicDescription(id, run))}</p></div></div>`; }).join('') : '<p class="quiet empty-inventory">戦闘に勝つと、遺物や修練から<br>次の力を選べます。</p>'}</div>${stowedInventory(run)}</details>${run.lastReport ? lastSpell(run.lastReport) : ''}</aside></section>`;
 }
 function reward(run: Run): string {
@@ -183,7 +269,7 @@ function reward(run: Run): string {
   const heading = run.rewardStep === 'skill' ? '使いこなす術式を、選ぶ。' : staged && run.rewardStep === 'relic' ? '次は、遺物を育てる。' : enemy.isBoss ? '詠唱は、さらに先へ。' : '新たな力を、ひとつ。';
   return `<div class="modal-eyebrow">${enemy.isBoss ? 'BOSS' : 'ENCOUNTER'} ${String(run.stage + 1).padStart(2, '0')} COMPLETE</div>${staged ? `<div class="reward-progress" aria-label="ボス報酬 ${run.rewardStep === 'skill' ? '1/2 スキル' : '2/2 遺物'}"><span class="${run.rewardStep === 'skill' ? 'current' : 'complete'}">${run.rewardStep === 'skill' ? '1/2' : '✓'} スキル</span><i>→</i><span class="${run.rewardStep === 'relic' ? 'current' : ''}">2/2 遺物</span></div>` : ''}<h2>${heading}</h2><p class="modal-intro">${run.rewardStep === 'skill' ? 'スキルを1つ取得・強化。そのあと遺物を1つ選べます。' : staged && run.rewardStep === 'relic' ? 'スキルの選択は保存済み。遺物を選ぶと、次の戦いへ進みます。' : enemy.isBoss ? 'ボスを撃破！ 鍛えた詠唱と新たな力で、さらに先へ。' : '敵を撃破しました。新しい力を選んで、さらに先へ。'}</p><div class="reward-summary"><span>✧ 撃破 ＋500</span>${run.lastReport ? `<span>♡ 生命力 ＋${run.lastReport.healed}</span>` : ''}<span>術式 Lv.${run.spellLevel}</span></div>${run.lastReport?.oneCastClear ? `<div class="one-cast-summary">✦ 一詠全成！ ${run.lastReport.segments?.filter(part => part.oneCastClear).length ?? 1}枚を一度の詠唱で完成<div>完成加算 合計 ＋${fmt(run.lastReport.clearBonus ?? 0)} ダメージ</div></div>` : ''}
   ${run.endgameBalanceVersion === 2 ? `<p class="quiet rescue-stock" data-rescue-stock>接続の栞 ${run.rescueItems ?? 0}個${run.lastReport?.rescueItemsGranted ? ` · 術式の成長で${run.lastReport.rescueItemsGranted}個獲得` : ''} · 詠唱前に「接続の栞を使う」を選べます。何も選ばなければ温存します。</p>` : ''}
-  <div class="history-entry"><button class="text-button" data-action="history-reward" aria-haspopup="dialog">プレイ履歴を見る →</button></div>
+  <div class="reward-autoplay">${autoplayButton()}</div><div class="history-entry"><button class="text-button" data-action="history-reward" aria-haspopup="dialog">プレイ履歴を見る →</button></div>
   ${enemy.isBoss ? contributionReport(run, reportBossOnly).replace('</section>', '<button class="text-button report-history-link" data-action="history-report" aria-haspopup="dialog">詠唱ごとのプレイ履歴を見る →</button></section>') : ''}${equipmentEditor(run)}
   <p class="reward-slots">遺物 ${run.inventory.length} / ${Math.max(RELIC_CAPACITY, run.inventory.length)} 枠 · 所持遺物の強化・進化とスキルは枠を使いません。${run.inventory.length >= RELIC_CAPACITY ? '新しい遺物は1つと入れ替えます。' : ''}</p>
   ${!run.relicBalanceVersion ? '<p class="quiet reward-balance-note">次の戦闘から遺物の効果を現在のルールに合わせます。レベル・進化段階は維持します。</p>' : ''}
@@ -213,7 +299,7 @@ function quickHelp(): string {
       <li><strong>魔力をためて、スキルを使う</strong><p>通常詠唱で魔力をため、魔力8または詠唱符1枚でスキルを使えます。詠唱符があれば先に使い、魔力・蓄電を消費しません。未確定の空きマスからも始められます。</p></li>
       <li><strong>敵を倒して、力を育てる</strong><p>撃破後は3択から報酬を選び、次の戦いへ。ボスではスキルと遺物を1つずつ獲得。シート完成や撃破で術式レベルが上がり、連鎖も育ちます。</p></li>
     </ol>
-    <p class="help-note">時間制限なし。考えている間は敵も待ちます。<br>PCは矢印キーでマスを移動、Enterで選択。Cキー、または「詠唱する」で確定します。</p>
+    <p class="help-note">時間制限なし。考えている間は敵も待ちます。<br>PCは矢印キーでマスを移動、Enterで選択。Cキー、または「詠唱する」で確定します。<br>Aキー、または「オート」で自動詠唱を切り替えます。</p>
     <div class="quick-help-actions"><button class="text-button" data-action="help-details">詳しいルール</button><button class="secondary" data-action="close">タイトルへ戻る</button></div>`;
 }
 function closeModal(): void {
@@ -247,7 +333,7 @@ function modalBody(): string | null {
   if (modal === 'history') return playHistory(save.history, historyView);
   if (modal === 'quick-help') return quickHelp();
   const helpRun = activeRun() ? save.run! : demoRun;
-  if (modal === 'help') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">HOW TO PLAY</div><h2>数字をつなぎ、魔法を紡ぐ。</h2><ol class="help-steps"><li><strong>青緑の数字から、起点を選ぶ</strong><p>候補が1つのマスに○と細い枠がつきます。連鎖の予告線の中でも、○のマスへ起点を選び直せます。●は選択中、金色の数字と線はその連鎖の予告です。★は、現在の通常・スキルで最長の連鎖になるすべての起点です。冒険の最初から表示されます。</p></li><li><strong>予告を見比べて、詠唱する</strong><p>「連鎖のしくみ」で1マスずつ確認できます。直前に埋めたマスと同じ行・列・3×3区画にある確定マスへ進みます。最初から確定していたマスも対象です。縦の距離＋横の距離が近い順、同距離なら上の行・左の列を優先します。</p></li><li><strong>術式が育つほど、連鎖も長くなる</strong><p>連鎖詠唱数は、起点のあとに詠唱をつなげられる回数です。起点は消費せず、続く1マスごとに1消費します。共鳴石の飛び火も消費しません。Lv.1の導火術師は連鎖詠唱数4で、起点と合わせて最大5連鎖。術式レベルが1上がるたび、連鎖詠唱数が1増えます。遺物なしで術式Lv.10・固有スキルLv.1なら、通常最大14連鎖、スキルで最大18連鎖です。予告の「○連鎖」は、起点や飛び火を含む実際の連鎖数です。残り連鎖詠唱数が0になるか、つながるマスがなくなると終了します。残りがあっても連鎖が途切れることがあります。新しい戦闘では、術式Lv.200・300・400…と100Lvごとに「接続の栞」を1個獲得します。詠唱前に「接続の栞を使う」を選ぶと、飛び火や橋渡しでも続かない時に栞1個と連鎖詠唱数6を消費して最も近い確定マスへ再接続します（移動先の入力を含む）。初期状態は温存で、1詠唱ごとに温存へ戻ります。1詠唱1個まで、再接続しなかった場合は選択中でも栞を消費せず、未使用分は持ち越します。成長で獲得した栞は次の詠唱から使え、シートをまたいでも使用回数は補充せず、追加の追撃はありません。1マス埋まるたびに候補を計算し直し、遺物やスキルで補充や飛び火が起こることもあります。</p></li><li><strong>完成・弱点・盾を狙う</strong><p>行・列の完成は光の奔流、3×3区画の完成は魔法陣のカットインと追加攻撃。シート完成時は、この一手で埋めた割合に応じて通常攻撃の最大25%を加算。初期の空きマスを一度で埋め切る「一詠全成」が最大のシート完成加算です。通常攻撃は各マスの攻撃と、行・列・区画の完成、弱点、共鳴石による追加分を含みます。三の護符は通常攻撃を増幅しますが、シート完成加算とスキルの追加攻撃は増幅しません。✧は弱点、◇は守護＋6。守護は同じシートの間ずっと蓄積し、毎回の反撃を軽減します。残り数マスになっても消えません。敵が生き残ると、連鎖の後に反撃します。</p></li><li><strong>魔力8、または詠唱符1枚でスキル</strong><p>未確定の空きマスからも始動できます。通常詠唱は埋めた1マスにつき魔力＋1${helpRun.relicBalanceVersion ? '、マス由来の充電は1詠唱最大5です' : 'です'}。${helpRun.relicBalanceVersion ? '蓄光術師・蓄電石の追加分はこの上限とは別に加算します。' : '蓄光術師・蓄電石の効果で、さらに魔力が増えます。'}詠唱符は1枚でスキルを詠唱し、魔力・蓄電を消費しません。持っているときは魔力より先に1枚使います。詠唱符がなければ魔力8を消費します。どちらの場合も、スキルの詠唱では充電しません。固有スキルと追加2枠から、1詠唱に1つだけ選べます。魔力と詠唱符はすべてのスキルで共通です。追加スキルの装備変更は報酬画面で行い、外しても所持とレベルは残ります。遺物の${RELIC_CAPACITY}枠とは別の装備枠です。スキルはLv.10まで成長し、レベルに応じて効果が強くなります。蓄電石に蓄えた魔力は、魔力を消費するスキルの詠唱後に魔力へ戻ります。</p></li><li><strong>シートを重ね、どこまでも連戦</strong><p>上位・長い導火線があると、シート完成時に残り連鎖詠唱数があれば次のシートへ連鎖を続けます。新しいシートの最初の入力も連鎖詠唱数を1消費します。攻撃と敵の反撃は全シートの連鎖が終わってから1回だけ。守護はシートごとに0に戻り、反撃にはこの詠唱中に得た最も高いシート守護を使います。シート完成と敵撃破で術式レベルが1ずつ上がり、連鎖詠唱数＋1、攻撃倍率＋0.2、最大HP＋4、HPを最大10回復。敵撃破で残りの盤面を一掃し、3択で新しい力を選びます。基本は遺物3択で、回復や修練がときどき候補に加わります。5戦ごとにボスが登場し、スキルを選ぶ1/2、遺物を選ぶ2/2の順に、両方の報酬を受け取れます。選択は段階ごとに保存されます。遺物は全${RELICS.length}種が最初の冒険から報酬候補に入り、${RELIC_CAPACITY}枠まで同時に使えます。満杯で新しい遺物を選ぶと、効果を比較して1つと入れ替えます。外した遺物のレベル・取得回数・段階はこの冒険中は保存され、報酬で再取得するとその状態へ戻ります（再取得だけではレベルは上がりません）。蓄電・詠唱符・次の詠唱への追加効果は、それをもたらす遺物を外すと失われます。所持遺物の強化・進化は枠を使いません。8枠が満杯の新しい遺物報酬には、交換不要の所持強化・進化と支援を必ず用意します。所持遺物の育成が完了している場合は、術式の鍛錬と別の支援が選べます。遺物はLv.10まで育ち、通常・上位・極位の段階はレベルと別に成長します。二・三・五・七の護符は、最初の3回で発動確率が30%、45%、60%と育ち、その後もレベルに応じて成長します。二は反撃を軽減し、三は通常攻撃を増幅、五は詠唱符を獲得、七は次の詠唱の連鎖詠唱数を増やします。詠唱符の所持中と詠唱符を使った詠唱では、五の護符は発動しません。それぞれの数字を含む連鎖で、各護符を詠唱確定時に1回抽選。確定ダメージと発動時ダメージを分けて予告します。遺物が出尽くしても修練・最大HP強化・5戦の祝福などの選択が続きます。祝福は再取得すると残り5戦に更新され、重複しません。新しい戦闘では、第51戦以降は進むほど基本攻撃力の増え幅も少しずつ大きくなり、ボスHPは同じ戦数の通常敵基準の最大8倍です。進行中の旧戦闘と抽選済みの報酬は保持し、次の戦闘・新しい抽選から切り替わります。HPが尽きるまで連戦は続き、一掃はシート完成の成長・得点・充電の対象外です。</p></li></ol><p class="help-note">時間制限はありません。PCでは矢印キーでマスを移動し、Enterで選択できます。通常・スキルともに、Cキーまたは「詠唱する」で確定します。</p>`;
+  if (modal === 'help') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">HOW TO PLAY</div><h2>数字をつなぎ、魔法を紡ぐ。</h2><ol class="help-steps"><li><strong>青緑の数字から、起点を選ぶ</strong><p>候補が1つのマスに○と細い枠がつきます。連鎖の予告線の中でも、○のマスへ起点を選び直せます。●は選択中、金色の数字と線はその連鎖の予告です。★は、現在の通常・スキルで最長の連鎖になるすべての起点です。冒険の最初から表示されます。</p></li><li><strong>予告を見比べて、詠唱する</strong><p>「連鎖のしくみ」で1マスずつ確認できます。直前に埋めたマスと同じ行・列・3×3区画にある確定マスへ進みます。最初から確定していたマスも対象です。縦の距離＋横の距離が近い順、同距離なら上の行・左の列を優先します。</p></li><li><strong>術式が育つほど、連鎖も長くなる</strong><p>連鎖詠唱数は、起点のあとに詠唱をつなげられる回数です。起点は消費せず、続く1マスごとに1消費します。共鳴石の飛び火も消費しません。Lv.1の導火術師は連鎖詠唱数4で、起点と合わせて最大5連鎖。術式レベルが1上がるたび、連鎖詠唱数が1増えます。遺物なしで術式Lv.10・固有スキルLv.1なら、通常最大14連鎖、スキルで最大18連鎖です。予告の「○連鎖」は、起点や飛び火を含む実際の連鎖数です。残り連鎖詠唱数が0になるか、つながるマスがなくなると終了します。残りがあっても連鎖が途切れることがあります。新しい戦闘では、術式Lv.200・300・400…と100Lvごとに「接続の栞」を1個獲得します。詠唱前に「接続の栞を使う」を選ぶと、飛び火や橋渡しでも続かない時に栞1個と連鎖詠唱数6を消費して最も近い確定マスへ再接続します（移動先の入力を含む）。初期状態は温存で、1詠唱ごとに温存へ戻ります。1詠唱1個まで、再接続しなかった場合は選択中でも栞を消費せず、未使用分は持ち越します。成長で獲得した栞は次の詠唱から使え、シートをまたいでも使用回数は補充せず、追加の追撃はありません。1マス埋まるたびに候補を計算し直し、遺物やスキルで補充や飛び火が起こることもあります。</p></li><li><strong>オートで詠唱を続ける</strong><p>Aキー、または「オート」ボタンでON/OFF。最長連鎖になる通常起点のうち、装甲を引いた確定ダメージが最大のマスを選びます。同点なら上の行、次に左の列を優先します。スキルと接続の栞は使いません。報酬・交換は自分で選び、すべての選択後に自動再開します。守護や生存より連鎖数とダメージを優先します。設定・図鑑・履歴・連鎖のしくみ・タイトルの閲覧中とタブが非表示の間は一時停止し、戻ると再開します。演出中のOFFは確定済みの一手が終わってから停止。敗北・保存失敗・起点なし・処理エラーで停止し、ページ再読み込みや新しい冒険ではOFFに戻ります。</p></li><li><strong>完成・弱点・盾を狙う</strong><p>行・列の完成は光の奔流、3×3区画の完成は魔法陣のカットインと追加攻撃。シート完成時は、この一手で埋めた割合に応じて通常攻撃の最大25%を加算。初期の空きマスを一度で埋め切る「一詠全成」が最大のシート完成加算です。通常攻撃は各マスの攻撃と、行・列・区画の完成、弱点、共鳴石による追加分を含みます。三の護符は通常攻撃を増幅しますが、シート完成加算とスキルの追加攻撃は増幅しません。✧は弱点、◇は守護＋6。守護は同じシートの間ずっと蓄積し、毎回の反撃を軽減します。残り数マスになっても消えません。敵が生き残ると、連鎖の後に反撃します。</p></li><li><strong>魔力8、または詠唱符1枚でスキル</strong><p>未確定の空きマスからも始動できます。通常詠唱は埋めた1マスにつき魔力＋1${helpRun.relicBalanceVersion ? '、マス由来の充電は1詠唱最大5です' : 'です'}。${helpRun.relicBalanceVersion ? '蓄光術師・蓄電石の追加分はこの上限とは別に加算します。' : '蓄光術師・蓄電石の効果で、さらに魔力が増えます。'}詠唱符は1枚でスキルを詠唱し、魔力・蓄電を消費しません。持っているときは魔力より先に1枚使います。詠唱符がなければ魔力8を消費します。どちらの場合も、スキルの詠唱では充電しません。固有スキルと追加2枠から、1詠唱に1つだけ選べます。魔力と詠唱符はすべてのスキルで共通です。追加スキルの装備変更は報酬画面で行い、外しても所持とレベルは残ります。遺物の${RELIC_CAPACITY}枠とは別の装備枠です。スキルはLv.10まで成長し、レベルに応じて効果が強くなります。蓄電石に蓄えた魔力は、魔力を消費するスキルの詠唱後に魔力へ戻ります。</p></li><li><strong>シートを重ね、どこまでも連戦</strong><p>上位・長い導火線があると、シート完成時に残り連鎖詠唱数があれば次のシートへ連鎖を続けます。新しいシートの最初の入力も連鎖詠唱数を1消費します。攻撃と敵の反撃は全シートの連鎖が終わってから1回だけ。守護はシートごとに0に戻り、反撃にはこの詠唱中に得た最も高いシート守護を使います。シート完成と敵撃破で術式レベルが1ずつ上がり、連鎖詠唱数＋1、攻撃倍率＋0.2、最大HP＋4、HPを最大10回復。敵撃破で残りの盤面を一掃し、3択で新しい力を選びます。基本は遺物3択で、回復や修練がときどき候補に加わります。5戦ごとにボスが登場し、スキルを選ぶ1/2、遺物を選ぶ2/2の順に、両方の報酬を受け取れます。選択は段階ごとに保存されます。遺物は全${RELICS.length}種が最初の冒険から報酬候補に入り、${RELIC_CAPACITY}枠まで同時に使えます。満杯で新しい遺物を選ぶと、効果を比較して1つと入れ替えます。外した遺物のレベル・取得回数・段階はこの冒険中は保存され、報酬で再取得するとその状態へ戻ります（再取得だけではレベルは上がりません）。蓄電・詠唱符・次の詠唱への追加効果は、それをもたらす遺物を外すと失われます。所持遺物の強化・進化は枠を使いません。8枠が満杯の新しい遺物報酬には、交換不要の所持強化・進化と支援を必ず用意します。所持遺物の育成が完了している場合は、術式の鍛錬と別の支援が選べます。遺物はLv.10まで育ち、通常・上位・極位の段階はレベルと別に成長します。二・三・五・七の護符は、最初の3回で発動確率が30%、45%、60%と育ち、その後もレベルに応じて成長します。二は反撃を軽減し、三は通常攻撃を増幅、五は詠唱符を獲得、七は次の詠唱の連鎖詠唱数を増やします。詠唱符の所持中と詠唱符を使った詠唱では、五の護符は発動しません。それぞれの数字を含む連鎖で、各護符を詠唱確定時に1回抽選。確定ダメージと発動時ダメージを分けて予告します。遺物が出尽くしても修練・最大HP強化・5戦の祝福などの選択が続きます。祝福は再取得すると残り5戦に更新され、重複しません。新しい戦闘では、第51戦以降は進むほど基本攻撃力の増え幅も少しずつ大きくなり、ボスHPは同じ戦数の通常敵基準の最大8倍です。進行中の旧戦闘と抽選済みの報酬は保持し、次の戦闘・新しい抽選から切り替わります。HPが尽きるまで連戦は続き、一掃はシート完成の成長・得点・充電の対象外です。</p></li></ol><p class="help-note">時間制限はありません。PCでは矢印キーでマスを移動し、Enterで選択できます。通常・スキルともに、Cキーまたは「詠唱する」で確定します。</p>`;
   if (modal === 'settings') return `<button class="modal-close" data-action="close" aria-label="閉じる">×</button><div class="modal-eyebrow">PREFERENCES</div><h2>詠唱のひとときを整える。</h2><div class="settings-list">${[{ key: 'largeText', name: '文字を大きく', text: '説明文とPCの操作表示を大きくします。' }, { key: 'sound', name: '効果音', text: '操作・魔法・打撃・防御・成長を異なる音で演出します。' }, { key: 'fast', name: '演出を短く', text: '連鎖・魔法カットイン・反撃・シート切替を短縮します。' }, { key: 'reducedMotion', name: '動きを抑える', text: '揺れや閃光を止め、攻撃と成長を文字で表示します。' }].map(s => `<label><span><strong>${s.name}</strong><small>${s.text}</small></span><input type="checkbox" data-setting="${s.key}" ${save.settings[s.key as keyof typeof save.settings] ? 'checked' : ''}></label>`).join('')}</div><p class="help-note">進行はこのブラウザに自動保存されます。別の端末とは共有されません。サイトデータを削除すると記録も消えます。</p><p class="help-note">効果音素材：Kenney / JaggedStone（CC0）。<a href="./audio-licenses/CREDITS.txt" target="_blank" rel="noopener">出典とライセンス</a></p>`;
   if (modal === 'codex') return `<div class="modal-eyebrow">THE RELIC ARCHIVE</div><h2>詠唱を育てる、${RELICS.length}の遺物。</h2><p class="modal-intro">全${RELICS.length}種が最初の冒険から報酬候補に入ります。同時に使えるのは${RELIC_CAPACITY}枠。選んで集め、各遺物をLv.10まで育て、通常・上位・極位へ進化させられます。各カードを開くと、Lv.ごとの効果と進化による違いを確認できます。</p><div class="codex-grid">${relicCodex(save.run ?? undefined)}</div>`;
   if (modal === 'restart') return `<div class="modal-eyebrow">A NEW JOURNEY</div><h2>新しい冒険をはじめますか？</h2><p class="modal-intro">今の冒険の進行は置き換わります。これまでの戦績と解放した要素は残ります。プレイ履歴は保存上限の範囲で残ります。</p><div class="dialog-actions"><button class="secondary" data-action="close">戻る</button><button class="primary" data-action="restart">新しい冒険をはじめる ↗</button></div>`;
@@ -256,6 +342,7 @@ function modalBody(): string | null {
   return null;
 }
 function render(displayRun = save.run): void {
+  if (autoplay && (!save.run || save.run.phase === 'lost' || save.run.phase === 'won')) stopAutoplay();
   const focus = document.activeElement as HTMLElement | null;
   const cellFocus = focus?.dataset.cell;
   const actionFocus = focus?.dataset.action;
@@ -282,11 +369,13 @@ function render(displayRun = save.run): void {
     if (board) {
       board.mount(document.getElementById('board-slot')!);
       board.set(displayRun, prediction, selected, skill, busy || displayRun.phase !== 'battle', guideOpen && prediction && !busy ? guideIndex : null, currentSkill(displayRun), useRescue);
+      if (autoplay) for (const cell of app.querySelectorAll<HTMLButtonElement>('[data-cell]')) { cell.disabled = true; cell.setAttribute('aria-disabled', 'true'); }
     } else {
       document.getElementById('board-slot')!.innerHTML = '<div class="board-loading">✧<span>魔法陣を開いています…</span></div>';
       if (!boardLoading) {
         boardLoading = true;
         void import('./ui/board').then(module => { board = new module.Board(); render(); }).catch(() => {
+          stopAutoplay();
           boardLoading = false; warning = '盤面を読み込めませんでした。ページを再読み込みしてください。';
           const slot = document.getElementById('board-slot');
           if (slot) slot.innerHTML = '<div class="board-loading"><span>読み込めませんでした。再読み込みしてください。</span></div>';
@@ -320,8 +409,10 @@ function render(displayRun = save.run): void {
     if (target && !target.disabled) target.focus({ preventScroll: true });
     else if (guideOpen) app.querySelector<HTMLElement>('.chain-navigation button:not([disabled])')?.focus({ preventScroll: true });
   }
+  scheduleAutoplay();
 }
 async function begin(): Promise<void> {
+  stopAutoplay();
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
   save = startRun(save, chosen, seed);
   guideOpen = false; guideIndex = 0; useRescue = false;
@@ -329,13 +420,15 @@ async function begin(): Promise<void> {
   tutorialHidden = save.meta.tutorialDone; await persistNow(); render(); window.scrollTo({ top: 0 });
 }
 function select(cell: number): void {
+  if (autoplay) return;
   const run = save.run;
   if (!run || run.phase !== 'battle' || run.cells[cell]) return;
   if (!legalOrigins(run, skill, currentSkill(run)).includes(cell)) { feedback = 'このマスはまだ未確定です。青緑の枠の数字を選ぶか、スキルを使いましょう。'; render(); return; }
   if (save.settings.sound) { audio.unlock(); audio.ui('select'); }
   selected = cell; prediction = previewAction(run, cell, skill, currentSkill(run), useRescue); guideIndex = 0; feedback = ''; render();
 }
-async function cast(): Promise<void> {
+async function cast(automatic = false): Promise<void> {
+  if (automatic ? !autoplayReady() : autoplay) return;
   if (view !== 'battle' || modal || busy || saving || saveBlocked || !board || save.run?.phase !== 'battle' || selected === null || !prediction) return;
   if (save.settings.sound) audio.unlock();
   const before = save.run;
@@ -357,7 +450,7 @@ async function cast(): Promise<void> {
     feedback = report.defeated ? '' : `${report.oneCastClear ? '✦ 一詠全成！ ' : ''}${report.fullClear ? `完成加算 ＋${fmt(report.clearBonus ?? 0)}。` : ''}${report.path.length}連鎖、${fmt(report.damage)}ダメージ、得点 ＋${fmt(report.attackScore)}。${report.relicHealed ? `黄金のインクで反撃前にHPを${report.relicHealed}回復。` : ''}${report.received ? `反撃でHP −${report.received}。` : '反撃を防ぎました。'}${report.healed > (report.relicHealed ?? 0) ? `成長でHPを${report.healed - (report.relicHealed ?? 0)}回復。` : ''}${report.sheetAdvanced ? `${report.sheetsCompleted ?? 1}シート完成！ 現在はシート${save.run!.encounterSheet}。術式 Lv.${save.run!.spellLevel}、連鎖詠唱数＋${chainBonus(save.run!.spellLevel)}、攻撃 ×${numberText(spellMultiplier(save.run!.spellLevel))}。` : stopText(report)}`;
     if (report.rescueItemsBefore !== undefined && report.path.some(event => event.rescue)) feedback += ' 接続の栞を1個使用しました。';
     if (report.rescueItemsGranted) feedback += ` 接続の栞を${report.rescueItemsGranted}個獲得しました。`;
-  } catch (error) { feedback = error instanceof Error ? error.message : '詠唱を完了できませんでした。'; }
+  } catch (error) { stopAutoplay(); feedback = error instanceof Error ? error.message : '詠唱を完了できませんでした。'; }
   finally { effects?.destroy(); activeEffects = null; busy = false; selected = null; prediction = null; skill = false; useRescue = false; render(); }
 }
 async function setSound(enabled: boolean): Promise<void> {
@@ -402,14 +495,16 @@ async function takeReward(relic: RewardId, replace?: RelicId): Promise<void> {
   currentSkill(save.run!); await persistNow(); render(); window.scrollTo({ top: 0 });
 }
 app.addEventListener('click', async event => {
+  const element = (event.target as HTMLElement).closest<HTMLElement>('button');
+  if (element?.dataset.action === 'autoplay' && !element.hasAttribute('disabled')) { toggleAutoplay(); return; }
   if (saving) return;
   if ((event.target as HTMLElement).classList.contains('modal-backdrop') && (modal === 'quick-help' || modalTriggerAction === 'quick-help' || modal === 'history')) { closeModal(); return; }
-  const element = (event.target as HTMLElement).closest<HTMLElement>('button');
   if (!element || element.hasAttribute('disabled')) return;
   // Muting stays available during the committed animation; keep its DOM intact.
   if (element.dataset.action === 'sound' && !saveBlocked) { void setSound(!save.settings.sound); return; }
   if (element.dataset.action === 'skip-animation' && busy) { skipAnimation = true; activeEffects?.skip(); element.setAttribute('disabled', ''); return; }
   if (busy) return;
+  if (autoplay && (element.dataset.cell !== undefined || element.dataset.selectSkill || ['cast', 'skill', 'rescue-toggle'].includes(element.dataset.action ?? ''))) return;
   if (saveBlocked && element.dataset.historyPage === undefined && element.dataset.historyCastsPage === undefined && !['history', 'history-export', 'close', 'home', 'result-home'].includes(element.dataset.action ?? '')) return;
   if (save.settings.sound) audio.unlock();
   if (element.dataset.cell !== undefined) { if (!guideOpen) return select(Number(element.dataset.cell)); return; }
@@ -520,6 +615,12 @@ app.addEventListener('toggle', event => {
   content.dataset.loaded = 'true';
 }, true);
 document.addEventListener('keydown', event => {
+  const target = event.target as HTMLElement;
+  const shortcut = !event.defaultPrevented && !event.repeat && !event.isComposing && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+    && !target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]');
+  if (event.key.toLowerCase() === 'a' && shortcut && !modal && view === 'battle' && activeRun()) {
+    event.preventDefault(); toggleAutoplay(); return;
+  }
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]');
   if (dialog) {
     if (event.key === 'Escape' && pendingReward && !modal) { event.preventDefault(); if (!saving) returnToRewards(); return; }
@@ -532,10 +633,10 @@ document.addEventListener('keydown', event => {
     }
     return;
   }
-  const target = event.target as HTMLElement;
+  if (event.key === 'Escape' && shortcut && autoplay) { event.preventDefault(); toggleAutoplay(); return; }
   if (event.key.toLowerCase() === 'c' && !event.defaultPrevented && !event.repeat && !event.isComposing && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey &&
     !target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]') &&
-    view === 'battle' && save.run?.phase === 'battle' && !busy && !saving && !saveBlocked && board && selected !== null && prediction) {
+    view === 'battle' && save.run?.phase === 'battle' && !autoplay && !busy && !saving && !saveBlocked && board && selected !== null && prediction) {
     event.preventDefault();
     void cast();
     return;
@@ -551,7 +652,17 @@ render();
 
 matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => { if (!busy) render(); });
 matchMedia('(min-width: 761px)').addEventListener('change', () => { if (!busy && view === 'battle') render(); });
-window.addEventListener('pagehide', event => { if (event.persisted) audio.setEnabled(false); else audio.dispose(); });
-window.addEventListener('pageshow', event => { if (event.persisted) audio.setEnabled(save.settings.sound); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) cancelAutoplayStep();
+  if (!busy && !saving) render(); else refreshAutoplayControls();
+});
+window.addEventListener('pagehide', event => {
+  pageSuspended = true; cancelAutoplayStep();
+  if (event.persisted) audio.setEnabled(false); else audio.dispose();
+});
+window.addEventListener('pageshow', event => {
+  pageSuspended = false;
+  if (event.persisted) { audio.setEnabled(save.settings.sound); if (!busy && !saving) render(); else scheduleAutoplay(); }
+});
 
 app.addEventListener('change', event => changeCodexTier(event.target, save.run ?? undefined));
