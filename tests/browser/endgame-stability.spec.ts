@@ -144,26 +144,29 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
   });
 }
 
-async function itemFixture(page: Page, level: number, stock: number) {
+async function itemFixture(page: Page, level: number, stock: number, useRescue = false, single = false, stage = 70) {
   await page.goto('/');
-  return page.evaluate(async ({ key, level, stock }) => {
+  return page.evaluate(async ({ key, level, stock, useRescue, single, stage }) => {
     const engine = '/src/game/engine.ts', sudoku = '/src/game/sudoku.ts', enemies = '/src/game/enemies.ts';
-    const { newSave, startRun, previewAction, dispatch } = await import(/* @vite-ignore */ engine);
+    const { newSave, startRun, previewAction, dispatch, longestOrigins } = await import(/* @vite-ignore */ engine);
     const { PEERS } = await import(/* @vite-ignore */ sudoku);
     const { enemyForRun } = await import(/* @vite-ignore */ enemies);
     const initial = newSave(); initial.meta.clears = 100; initial.meta.tutorialDone = true;
     initial.settings.reducedMotion = true;
     const save = startRun(initial, 'fuse', 71), run = save.run;
-    run.stage = 70; run.stats.kills = 70; run.spellLevel = level; run.hp = run.maxHp = 10000;
+    run.stage = stage; run.stats.kills = stage; run.spellLevel = level; run.hp = run.maxHp = 10000;
     run.rescueItems = stock; run.rescueMilestones = level < 200 ? 0 : 1;
-    run.enemyHp = level < 200 ? 1 : enemyForRun(run).hp;
+    run.enemyHp = level < 200 || single ? 1 : enemyForRun(run).hp;
     const root = run.givens.findIndex((given: boolean) => !given);
     const spare = run.givens.findIndex((given: boolean, cell: number) => !given && cell !== root && !PEERS[root].includes(cell));
     if (spare < 0) throw new Error('No isolated rescue target');
-    run.cells = [...run.solution]; run.cells[root] = 0; run.cells[spare] = 0;
-    const report = previewAction(run, root), expected = dispatch(save, { type: 'play', cell: root, skill: false, revision: run.revision });
-    localStorage.setItem(key, JSON.stringify(save)); return { root, spare, report, expected };
-  }, { key, level, stock });
+    run.cells = [...run.solution]; run.cells[root] = 0; if (!single) run.cells[spare] = 0;
+    const reportOff = previewAction(run, root), reportOn = previewAction(run, root, false, undefined, true);
+    const report = useRescue ? reportOn : reportOff;
+    const expected = dispatch(save, { type: 'play', cell: root, skill: false, useRescue, revision: run.revision });
+    const longestOff = longestOrigins(run), longestOn = longestOrigins(run, false, undefined, true);
+    localStorage.setItem(key, JSON.stringify(save)); return { root, spare, report, expected, reportOff, reportOn, longestOff, longestOn };
+  }, { key, level, stock, useRescue, single, stage });
 }
 
 async function checkItemHistory(page: Page, before: number, after: number, granted: number, used: number) {
@@ -179,7 +182,8 @@ async function checkItemHistory(page: Page, before: number, after: number, grant
   await page.keyboard.press('Escape');
 }
 
-for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844 }]) {
+const itemViewports = [{ width: 1440, height: 1080 }, { width: 390, height: 844 }, { width: 320, height: 740 }];
+for (const viewport of itemViewports) {
   test(`Lv.199 earns its first reconnect item after casting and reloads without duplicating it at ${viewport.width}px`, async ({ page }) => {
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.setViewportSize(viewport);
@@ -211,10 +215,15 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
     test(`Lv.200 item stock ${stock} preserves previews, commits one bounded rescue, and records history at ${viewport.width}px`, async ({ page }) => {
       const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
       await page.setViewportSize(viewport);
-      const fixture = await itemFixture(page, 200, stock);
+      const fixture = await itemFixture(page, 200, stock, !!stock);
       expect(fixture.report.path).toHaveLength(stock ? 2 : 1);
       expect(fixture.report.path.filter((event: { rescue?: boolean }) => event.rescue)).toHaveLength(stock);
       await resume(page); const before = await savedGame(page);
+      const rescueToggle = page.locator('[data-action="rescue-toggle"]');
+      await expect(rescueToggle).toHaveAttribute('aria-pressed', 'false');
+      if (stock) { await expect(rescueToggle).toBeEnabled(); await rescueToggle.click(); }
+      else await expect(rescueToggle).toBeDisabled();
+      await expect(rescueToggle).toHaveAttribute('aria-pressed', String(!!stock));
       await expect(page.locator('.skill-description')).toContainText(`接続の栞 ${stock}個`);
       await expect(page.locator('.skill-description')).toContainText('次は術式Lv.300で1個');
       for (let repeat = 0; repeat < 3; repeat++) {
@@ -243,11 +252,110 @@ for (const viewport of [{ width: 1440, height: 1080 }, { width: 390, height: 844
         expect(step.remainingBefore - step.remainingAfter + step.addedAuto).toBe(6);
       }
       await expect(page.locator('.skill-description')).toContainText('接続の栞 0個');
+      await expect(rescueToggle).toHaveAttribute('aria-pressed', 'false');
       await checkItemHistory(page, stock, 0, 0, stock);
       expect(await savedGame(page)).toEqual(after);
       await resume(page); expect(await savedGame(page)).toEqual(after);
+      await expect(rescueToggle).toHaveAttribute('aria-pressed', 'false');
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       expect(errors).toEqual([]);
     });
   }
+
+  test(`reconnect choice changes previews, longest stars and guide, then resets while unused stock survives at ${viewport.width}px`, async ({ page }) => {
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await page.setViewportSize(viewport);
+    const fixture = await itemFixture(page, 200, 1);
+    expect(fixture.reportOff.path).toHaveLength(1); expect(fixture.reportOn.path).toHaveLength(2);
+    await resume(page); const before = await savedGame(page);
+    const toggle = page.locator('[data-action="rescue-toggle"]');
+    const roots = () => page.locator('[data-cell][data-longest="true"]').evaluateAll(elements => elements.map(element => Number((element as HTMLElement).dataset.cell)));
+    const checkLongest = async (expected: { length: number; cells: number[] }) => {
+      await expect(page.locator('.longest-origins')).toHaveAttribute('data-length', String(expected.length));
+      await expect(page.locator('.longest-origins')).toHaveAttribute('data-count', String(expected.cells.length));
+      expect(await roots()).toEqual(expected.cells);
+    };
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false'); await expect(toggle).toBeEnabled();
+    await checkLongest(fixture.longestOff);
+    // Set the choice before choosing an origin, then change it with an origin selected.
+    await toggle.click(); await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await checkLongest(fixture.longestOn);
+    expect(await savedGame(page)).toEqual(before);
+    await toggle.click(); await page.locator(`[data-cell="${fixture.root}"]`).click();
+    await expect(page.locator('#prediction-chain')).toHaveText('1');
+    await toggle.click(); await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator(`[data-cell="${fixture.root}"]`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#prediction-chain')).toHaveText('2'); await checkLongest(fixture.longestOn);
+    await page.locator('[data-action="chain-guide"]').click();
+    await page.locator('[data-action="chain-next"]').click();
+    await expect(page.locator('#chain-step-title')).toContainText('接続救済');
+    await expect(page.locator('#chain-budget')).toContainText('6消費');
+    expect(await savedGame(page)).toEqual(before);
+    await page.locator('[data-action="chain-close"]').click();
+    // A UI choice is transient: reloading while ON does not spend or retain it.
+    await resume(page); expect(await savedGame(page)).toEqual(before);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false'); await checkLongest(fixture.longestOff);
+    await page.locator(`[data-cell="${fixture.root}"]`).click();
+    await page.locator('[data-action="chain-guide"]').click();
+    await expect(page.locator('#chain-step-title')).not.toContainText('接続救済');
+    await page.locator('[data-action="chain-next"]').click();
+    await expect(page.locator('.chain-position')).toHaveText('連鎖終了');
+    await page.locator('[data-action="chain-close"]').click();
+    await page.locator('[data-action="cast"]').click(); await savedText(page);
+    await expect(page.locator('[data-action="cast"]')).toContainText('起点を選んでください');
+    const kept = await savedGame(page);
+    expect(kept).toEqual(fixture.expected);
+    expect(kept.run!.rescueItems).toBe(1);
+    expect(kept.run!.lastReport!.path.some(event => event.rescue)).toBe(false);
+    expect(kept.run!.lastReport).toMatchObject({ rescueRequested: false });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    // Only one blank remains: choosing ON must not spend a bookmark needlessly.
+    const needed = await page.evaluate(async ({ run, cell }) => {
+      if (!run) throw new Error('Missing saved run');
+      const path = '/src/game/engine.ts'; const { previewAction, resolveAction } = await import(/* @vite-ignore */ path);
+      const report = previewAction(run, cell, false, undefined, true);
+      return { report, expected: resolveAction(run, { type: 'play', cell, skill: false, useRescue: true, revision: run.revision }) };
+    }, { run: kept.run, cell: fixture.spare });
+    expect(needed.report.path.some((event: { rescue?: boolean }) => event.rescue)).toBe(false);
+    await toggle.click(); await page.locator(`[data-cell="${fixture.spare}"]`).click();
+    await expect(page.locator('#prediction-chain')).toHaveText(String(needed.report.path.length));
+    await page.locator('[data-action="cast"]').click(); await savedText(page);
+    await expect(page.locator('[data-action="cast"]')).toContainText('起点を選んでください');
+    const unused = await savedGame(page);
+    expect(unused.run).toEqual(needed.expected);
+    expect(unused.run!.rescueItems).toBe(1);
+    expect(unused.run!.lastReport).toMatchObject({ rescueRequested: true, rescueItemsBefore: 1, rescueItemsAfter: 1 });
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `.runtime/screenshots/endgame-manual-rescue-retained-${viewport.width}.png`, fullPage: true });
+    await resume(page); expect(await savedGame(page)).toEqual(unused);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false'); expect(errors).toEqual([]);
+  });
+
+  test(`an unused reconnect bookmark remains available through the reward and next boss at ${viewport.width}px`, async ({ page }) => {
+    const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+    await page.setViewportSize(viewport);
+    const fixture = await itemFixture(page, 200, 1, false, true, 73);
+    await resume(page);
+    const toggle = page.locator('[data-action="rescue-toggle"]');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await page.locator(`[data-cell="${fixture.root}"]`).click();
+    await page.locator('[data-action="cast"]').click(); await savedText(page);
+    await expect(rewardDialog(page)).toBeVisible();
+    const rewarded = await savedGame(page);
+    expect(rewarded.run!.rescueItems).toBe(1);
+    expect(rewarded.run!.lastReport).toMatchObject({ rescueRequested: false });
+    await rewardDialog(page).locator('[data-reward]').first().click(); await savedText(page);
+    await expect(rewardDialog(page)).toHaveCount(0);
+    const boss = await savedGame(page);
+    expect(boss.run!.stage).toBe(74); expect(boss.run!.rescueItems).toBe(1);
+    await expect(page.getByRole('heading', { name: '星喰いの影', exact: true })).toBeVisible();
+    await expect(toggle).toBeEnabled(); await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await toggle.click(); await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(await savedGame(page)).toEqual(boss);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `.runtime/screenshots/endgame-manual-rescue-boss-${viewport.width}.png`, fullPage: true });
+    await resume(page); expect(await savedGame(page)).toEqual(boss);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false'); expect(errors).toEqual([]);
+  });
 }

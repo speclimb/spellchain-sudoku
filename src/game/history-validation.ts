@@ -39,6 +39,8 @@ function cast(v: any): boolean {
     && (['rescueItemsBefore','rescueItemsAfter','rescueItemsGranted'].every(k => v[k] === undefined)
       || ['rescueItemsBefore','rescueItemsAfter','rescueItemsGranted'].every(k => integer(v[k]))
         && [0,1].includes(v.rescueItemsBefore + v.rescueItemsGranted - v.rescueItemsAfter))
+    && (v.rescueRequested === undefined || typeof v.rescueRequested === 'boolean' && integer(v.rescueItemsBefore)
+      && (v.rescueRequested || v.rescueItemsBefore + v.rescueItemsGranted === v.rescueItemsAfter))
     && typeof v.freeSkill === 'boolean' && (v.skillId === undefined ? v.skillLevel === undefined : skills.includes(v.skillId) && integer(v.skillLevel,1,10))
     && v.damage === v.hpDamage+v.overkill && v.hpDamage === Math.min(v.damage,v.enemyBefore) && v.overkill === Math.max(0,v.damage-v.enemyBefore)
     && (v.relicHealed === undefined || integer(v.relicHealed,0,Math.min(7,v.healed)))
@@ -48,7 +50,7 @@ function cast(v: any): boolean {
     && v.procs.every((p: any) => object(p) && ['duality','trinity','quint','sept'].includes(p.id) && typeof p.triggered === 'boolean'
       && typeof p.chance === 'number' && p.chance >= 0 && p.chance <= 1 && typeof p.value === 'number' && Number.isFinite(p.value) && p.value > 0 && known(p,['id','chance','value','triggered']))
     && object(v.relics) && Object.entries(v.relics).every(([id,e]) => relics.has(id as any) && object(e) && integer(e.level,1,10) && integer(e.tier,1,3) && metric(e.metric,true) && known(e,['level','tier','metric']))
-    && known(v,['gameVersion','id','turn','skillId','skillLevel','spellLevel','chain','sheetFrom','sheetTo','sheetsCompleted','damage','hpDamage','overkill','received','hpLost','incoming','shield','healed','relicHealed','hpBefore','hpAfter','enemyBefore','enemyAfter','freeSkill','score','procs','relics','fuelBefore','fuelAfter','tokensBefore','tokensAfter','manaBefore','manaAfter','charged','overflowBefore','overflowAfter','overflowRestored','rescueItemsBefore','rescueItemsAfter','rescueItemsGranted','stopReason']);
+    && known(v,['gameVersion','id','turn','skillId','skillLevel','spellLevel','chain','sheetFrom','sheetTo','sheetsCompleted','damage','hpDamage','overkill','received','hpLost','incoming','shield','healed','relicHealed','hpBefore','hpAfter','enemyBefore','enemyAfter','freeSkill','score','procs','relics','fuelBefore','fuelAfter','tokensBefore','tokensAfter','manaBefore','manaAfter','charged','overflowBefore','overflowAfter','overflowRestored','rescueItemsBefore','rescueItemsAfter','rescueItemsGranted','rescueRequested','stopReason']);
 }
 function build(v: any, character: string): boolean {
   cleanVersion(v);

@@ -148,11 +148,11 @@ describe('limited reconnect items', () => {
   });
   it('consumes one item only on a committed rescue, with matching preview and save accounting', () => {
     const save = limited(), run = save.run!; partial(run); run.enemyHp = 1;
-    const before = structuredClone(run), prediction = previewAction(run, 2);
+    const before = structuredClone(run), prediction = previewAction(run, 2, false, undefined, true);
     expect(run).toEqual(before);
-    expect(prediction).toMatchObject({ rescueItemsBefore: 1, rescueItemsAfter: 0, rescueItemsGranted: 0 });
+    expect(prediction).toMatchObject({ rescueItemsBefore: 1, rescueItemsAfter: 0, rescueItemsGranted: 0, rescueRequested: true });
     expect(prediction.path[1]).toMatchObject({ rescue: true });
-    const next = dispatch(save, { type: 'play', cell: 2, skill: false, revision: run.revision });
+    const next = dispatch(save, { type: 'play', cell: 2, skill: false, useRescue: true, revision: run.revision });
     expect(next.run).toMatchObject({ rescueItems: 0, rescueMilestones: 1 });
     expect(next.run!.lastReport).toMatchObject({ rescueItemsBefore: 1, rescueItemsAfter: 0, rescueItemsGranted: 0 });
     expect(parseSave(JSON.stringify(next))).toEqual(next);
@@ -160,18 +160,18 @@ describe('limited reconnect items', () => {
   });
   it('does not rescue without stock and invalidates cached paths when stock changes', () => {
     const run = limited(200, 0).run!; partial(run);
-    expect(longestOrigins(run).length).toBe(1);
-    expect(previewAction(run, 2).path).toHaveLength(1);
+    expect(longestOrigins(run, false, undefined, true).length).toBe(1);
+    expect(previewAction(run, 2, false, undefined, true).path).toHaveLength(1);
     run.rescueItems = 1;
-    expect(longestOrigins(run).length).toBe(2);
-    expect(previewAction(run, 2).path[1].rescue).toBe(true);
+    expect(longestOrigins(run, false, undefined, true).length).toBe(2);
+    expect(previewAction(run, 2, false, undefined, true).path[1].rescue).toBe(true);
   });
   it('does not spend items on natural connections or reuse a second item in the same cast', () => {
     const run = limited(400, 3).run!; partial(run, [9, 11, 13, 14, 16]);
-    const natural = previewAction(run, 9);
+    const natural = previewAction(run, 9, false, undefined, true);
     expect(natural).toMatchObject({ rescueItemsBefore: 3, rescueItemsAfter: 3, rescueItemsGranted: 0 });
     const empty = isolated(run, 5); partial(run, empty);
-    const prediction = previewAction(run, empty[0]);
+    const prediction = previewAction(run, empty[0], false, undefined, true);
     expect(prediction.path).toHaveLength(2);
     expect(prediction.path.filter(event => event.rescue)).toHaveLength(1);
     expect(prediction).toMatchObject({ rescueItemsBefore: 3, rescueItemsAfter: 2, rescueItemsGranted: 0 });
@@ -179,12 +179,12 @@ describe('limited reconnect items', () => {
   it('prioritizes Bridge and does not replenish the single rescue across fresh sheets', () => {
     const run = limited().run!, empty = isolated(run, 5); partial(run, empty);
     run.skillLevels!.bridge = 10; run.equippedSkills = ['bridge']; run.mana = 8;
-    const bridge = previewAction(run, empty[0], true, 'bridge');
+    const bridge = previewAction(run, empty[0], true, 'bridge', true);
     expect(bridge.path.slice(1, 4).every(event => event.bridge && !event.rescue)).toBe(true);
     expect(bridge.path[4].rescue).toBe(true);
     expect(bridge.rescueItemsAfter).toBe(0);
     const sheets = limited(300, 2, 1).run!; sheets.inventory = ['wick']; sheets.tier.wick = 2;
-    const across = previewAction(sheets, 8);
+    const across = previewAction(sheets, 8, false, undefined, true);
     expect(across.segments!.length).toBeGreaterThan(2);
     expect(across.path.filter(event => event.rescue)).toHaveLength(1);
     expect(across).toMatchObject({ rescueItemsBefore: 2, rescueItemsAfter: 1, rescueItemsGranted: 0 });
@@ -239,7 +239,7 @@ describe('limited reconnect items', () => {
   });
   it('rejects missing, fractional, negative or impossible v2 resources and forged item accounting', () => {
     const save = limited(), run = save.run!; partial(run); run.enemyHp = 1;
-    const next = dispatch(save, { type: 'play', cell: 2, skill: false, revision: 0 });
+    const next = dispatch(save, { type: 'play', cell: 2, skill: false, useRescue: true, revision: 0 });
     for (const mutate of [
       (r: any) => { delete r.rescueItems; },
       (r: any) => { delete r.rescueMilestones; },
@@ -252,10 +252,44 @@ describe('limited reconnect items', () => {
       (r: any) => { r.lastReport.rescueItemsBefore = 0; },
       (r: any) => { r.lastReport.rescueItemsAfter = 1; },
       (r: any) => { r.lastReport.rescueItemsGranted = 1; },
+      (r: any) => { r.lastReport.rescueRequested = false; },
+      (r: any) => { r.lastReport.rescueRequested = 'yes'; },
       (r: any) => { delete r.lastReport.path[1].rescue; delete r.lastReport.chain.steps[1].rescue; },
     ]) {
       const invalid = structuredClone(next); mutate(invalid.run);
       expect(() => parseSave(JSON.stringify(invalid))).toThrow();
     }
+  });
+  it('preserves an item by default or explicit opt-out and round trips the reserved cast', () => {
+    for (const useRescue of [undefined, false]) {
+      const save = limited(), run = save.run!; partial(run); run.enemyHp = 1;
+      const prediction = previewAction(run, 2, false, undefined, useRescue);
+      expect(prediction.path).toHaveLength(1);
+      expect(prediction).toMatchObject({ rescueRequested: false, rescueItemsBefore: 1, rescueItemsAfter: 1, rescueItemsGranted: 0 });
+      const next = dispatch(save, { type: 'play', cell: 2, skill: false, useRescue, revision: 0 });
+      expect(next.run!.lastReport).toEqual(prediction);
+      expect(next.run!.rescueItems).toBe(1);
+      expect(parseSave(JSON.stringify(next))).toEqual(next);
+    }
+  });
+  it('keeps longest-path caches separate for use and reserve selections without mutating the run', () => {
+    const run = limited().run!; partial(run); const before = structuredClone(run);
+    for (let repeat = 0; repeat < 3; repeat++) {
+      expect(longestOrigins(run).length).toBe(1);
+      expect(longestOrigins(run, false, undefined, true).length).toBe(2);
+      expect(longestOrigins(run, false, undefined, false).length).toBe(1);
+      expect(previewAction(run, 2).path).toHaveLength(1);
+      expect(previewAction(run, 2, false, undefined, true).path).toHaveLength(2);
+    }
+    expect(run).toEqual(before);
+  });
+  it('preserves old v2 automatic-rescue reports without a requested flag', () => {
+    const save = limited(), run = save.run!; partial(run); run.enemyHp = 1;
+    const next = dispatch(save, { type: 'play', cell: 2, skill: false, useRescue: true, revision: 0 });
+    delete next.run!.lastReport!.rescueRequested;
+    delete next.history!.runs.at(-1)!.battles[0].casts[0].rescueRequested;
+    expect(parseSave(JSON.stringify(next))).toEqual(next);
+    expect(next.run!.lastReport!.path.some(event => event.rescue)).toBe(true);
+    expect(next.run!.rescueItems).toBe(0);
   });
 });

@@ -2,6 +2,7 @@
  * Run: node scripts/endgame-stability-balance.mjs
  * Optional PowerShell environment: $env:MODES='baseline,rewards,chain,curve,full'
  * SEEDS=102,103 CHARACTERS=fuse,scribe,lumen STAGE_LIMIT=150 ROOT_BUDGET=6
+ * RESCUE_POLICY=boss|always|never (default boss) controls current finite items.
  * BASELINE_REF defaults to the pre-change 25f0dec commit, resolved before bundling.
  * Fixtures are synthetic, explicitly separate from natural initial-state runs.
  */
@@ -21,6 +22,8 @@ const modes = (process.env.MODES ?? 'baseline,full').split(',');
 const stageLimit = Number(process.env.STAGE_LIMIT ?? 150);
 const rootBudget = Number(process.env.ROOT_BUDGET ?? 6);
 const timeLimitSeconds = Number(process.env.TIME_LIMIT_SECONDS ?? 1200);
+const rescuePolicy = process.env.RESCUE_POLICY ?? 'boss';
+if (!['boss', 'always', 'never'].includes(rescuePolicy)) throw new Error(`Invalid RESCUE_POLICY ${rescuePolicy}`);
 const baselineRef = execFileSync('git', ['rev-parse', process.env.BASELINE_REF ?? '25f0dec05bd5e990357061587d7dc59e0fd00708'], { encoding: 'utf8' }).trim();
 const fixtureLevels = (process.env.FIXTURE_LEVELS ?? '100,300,800').split(',').map(Number);
 if (!Number.isInteger(rootBudget) || rootBudget < 1 || !Number.isInteger(stageLimit) || stageLimit < 1) throw new Error('Invalid positive integer root budget or stage limit');
@@ -48,11 +51,13 @@ for (const mode of [...new Set([...modes, 'baseline', 'full'])]) {
         let contents = mode === 'baseline' ? gitSource(file).toString('utf8') : readFileSync(args.path, 'utf8');
         // Test-only ablations leave encounter migration/version assignment intact.
         // Only the eligibility conditions for chain rescue / enemy curves change.
-        const disableChain = (mode === 'rewards' || mode === 'curve') && file === 'src/game/endgame.ts';
+        const disableChain = (mode === 'rewards' || mode === 'curve') && file === 'src/game/engine.ts';
         const disableCurves = (mode === 'rewards' || mode === 'chain') && file === 'src/game/enemies.ts';
         if (disableChain || disableCurves) {
           let count = 0;
-          contents = contents.replace(/\b(?:(?:source|run)\.)?endgameBalanceVersion\s*===\s*1/g, () => { count++; return 'false'; });
+          contents = disableChain
+            ? contents.replace(/let rescueLeft = canRescueChain\([^;]*\);/g, () => { count++; return 'let rescueLeft = false;'; })
+            : contents.replace(/\bendgameBalanceVersion\s*>\s*0/g, () => { count++; return 'false'; });
           if (!count) throw new Error(`Could not disable ${disableChain ? 'chain rescue' : 'enemy curves'} in ${file}; update this explicit test-only transformation.`);
           transformed[file] = count;
         }
@@ -65,8 +70,9 @@ for (const mode of [...new Set([...modes, 'baseline', 'full'])]) {
 }
 
 const method = {
-  description: 'Paired initial-state organic runs with identical seeds, reward preferences and limited guaranteed-outcome preview policy. Baseline is the complete pinned Git source; full is the unmodified working source. Ablations use current rewards and explicitly disable only endgame condition checks in chain planning or enemy curves.',
-  baselineRef, hashes, runtime: process.version, characters, seeds, modes, stageLimit, rootBudget, timeLimitSeconds,
+  description: 'Paired initial-state organic runs with identical seeds, reward preferences and limited guaranteed-outcome preview policy. Baseline is the complete pinned Git source; full is the unmodified working source with manually selected finite rescue items. These are new policy-specific trials, not the historical automatic-rescue measurements. Ablations use current rewards and explicitly disable only rescue eligibility in chain planning or endgame enemy curves.',
+  baselineRef, hashes, runtime: process.version, characters, seeds, modes, stageLimit, rootBudget, timeLimitSeconds, rescuePolicy,
+  rescueSelection: 'Current finite-item runs select useRescue before each cast: boss enables it only against bosses, always enables it in every battle, never conserves every item. Selection requires existing stock and spends one only on an actual reconnect. Pinned legacy source ignores the extra preview argument and action property and keeps its own original rescue rules.',
   selection: 'At most ROOT_BUDGET deterministic roots per available normal/intrinsic/equipped skill: weak/shield marked roots, then evenly spread legal roots. Choose guaranteed kill, then capped guaranteed damage minus 15 times worst-case incoming HP damage plus 5 for a completed sheet; ties prefer no skill. Never call primeRoll, inspect triggered results, or use forecast.damageMax to choose. Rewards follow a fixed preference; replacement retires the least preferred held relic.',
   limitations: 'Limited-root greedy policy is neither optimal nor human play. Natural growth is never pregranted; meta unlocks only allow all character/relic choices. Source changes legitimately diverge future board/reward streams. Defeats and stage/time/cast censored runs are distinct. Synthetic max-equipment fixtures measure paths and guaranteed damage, not natural attainment or survival.',
 };
@@ -104,12 +110,15 @@ function rootChoices(e, run, skillId) {
 }
 function bestAction(e, run, onlySkill) {
   let action, best = -Infinity;
+  const useRescue = run.endgameBalanceVersion === 2 && (run.rescueItems ?? 0) > 0
+    && (rescuePolicy === 'always' || rescuePolicy === 'boss' && e.enemyForRun(run).isBoss);
   const skillIds = onlySkill ? [onlySkill] : e.canUseSkill(run) ? [undefined, run.character, ...run.equippedSkills] : [undefined];
   for (const skillId of [...new Set(skillIds)]) for (const cell of rootChoices(e, run, skillId)) {
-    const p = e.previewAction(run, cell, !!skillId, skillId);
+    const p = e.previewAction(run, cell, !!skillId, skillId, useRescue);
+    if (run.endgameBalanceVersion === 2 && p.rescueRequested !== useRescue) throw new Error('Current preview did not apply the recorded rescue selection');
     // p is the no-proc settlement. received is therefore the conservative counter.
     const value = (p.defeated ? 1e15 : 0) + Math.min(run.enemyHp, p.damage) - p.received * 15 + (p.fullClear ? 5 : 0) - (skillId ? .001 : 0);
-    if (value > best) { best = value; action = { type: 'play', cell, skill: !!skillId, skillId, revision: run.revision }; }
+    if (value > best) { best = value; action = { type: 'play', cell, skill: !!skillId, skillId, useRescue, revision: run.revision }; }
   }
   if (!action) throw new Error('No legal action');
   return action;
@@ -175,7 +184,8 @@ for (const character of characters) for (const seed of seeds) for (const mode of
     const action = bestAction(e, run), before = { wave: run.stage + 1, level: run.spellLevel, hpBefore: run.hp, maxHpBefore: run.maxHp, enemyBefore: run.enemyHp, boss: battle.boss };
     run = e.resolveAction(run, action);
     const report = run.lastReport;
-    result.casts.push({ ...before, ...castMetrics(report), skill: action.skillId ?? null, cell: action.cell, damage: report.damage,
+    if (run.endgameBalanceVersion === 2 && report.rescueRequested !== action.useRescue) throw new Error('Settlement changed the selected rescue policy');
+    result.casts.push({ ...before, ...castMetrics(report), skill: action.skillId ?? null, cell: action.cell, useRescue: action.useRescue, damage: report.damage,
       guaranteedDamage: report.guaranteedDamage, received: report.received, incoming: report.incoming, shield: report.shield,
       hp: run.hp, maxHp: run.maxHp, levelAfter: run.spellLevel, defeated: report.defeated });
     battle.casts++; battle.received += report.received;
@@ -205,6 +215,8 @@ if (process.env.SKIP_FIXTURES !== '1' && elapsed() < timeLimitSeconds) {
     const e = engines[mode], save = e.newSave(); save.meta.clears = 99;
     const run = e.startRun(save, character, seed).run;
     run.stage = 144; run.spellLevel = level; run.hp = run.maxHp = 120 + level * 4; run.mana = 8; run.enemyHp = Number.MAX_SAFE_INTEGER;
+    // Synthetic growth includes its earned stock; this is never an organic run.
+    if (run.endgameBalanceVersion === 2) run.rescueItems = run.rescueMilestones = Math.max(0, Math.floor((level - 200) / 100) + 1);
     run.inventory = ['wick', 'rekindle', 'pen', 'lens', 'amplifier', 'trinity', 'quint', 'duality'];
     run.relicLevels = Object.fromEntries(run.inventory.map(id => [id, 10]));
     run.tier = Object.fromEntries(run.inventory.map(id => [id, 3]));
@@ -212,8 +224,8 @@ if (process.env.SKIP_FIXTURES !== '1' && elapsed() < timeLimitSeconds) {
     run.skillLevels = { [character]: 10, bridge: 10 }; run.skillRank = 2; run.equippedSkills = ['bridge'];
     const skillResults = {};
     for (const skill of ['bridge', character]) {
-      const action = bestAction(e, run, skill), report = e.previewAction(run, action.cell, true, skill);
-      skillResults[skill] = { cell: action.cell, ...castMetrics(report), guaranteedDamage: report.damage, extraDamage: report.extraDamage, received: report.received };
+      const action = bestAction(e, run, skill), report = e.previewAction(run, action.cell, true, skill, action.useRescue);
+      skillResults[skill] = { cell: action.cell, useRescue: action.useRescue, ...castMetrics(report), guaranteedDamage: report.damage, extraDamage: report.extraDamage, received: report.received };
     }
     fixtures.push({ kind: 'synthetic-fixed-equipment-preview', character, seed, level, mode, wave: 145, allEquipmentLevel: 10, allEquipmentTier: 3,
       bridgeRelativeGuaranteedDamage: skillResults.bridge.guaranteedDamage / skillResults[character].guaranteedDamage, skills: skillResults });

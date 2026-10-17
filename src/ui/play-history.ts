@@ -93,6 +93,7 @@ export function historyCastDetails(cast: HistoryCast): string {
   const quint = metric(cast.relics.quint?.metric), sept = metric(cast.relics.sept?.metric);
   const relics = Object.entries(cast.relics) as [RelicId, NonNullable<HistoryCast['relics'][RelicId]>][];
   const rescue = cast.rescueItemsBefore === undefined ? '' : `<h5>接続の栞</h5>${rows([
+    { label: '詠唱前の指定', value: cast.rescueRequested === undefined ? '旧記録（使用指定の記録なし）' : cast.rescueRequested ? '接続救済に使う（必要な場合だけ消費）' : '温存する' },
     { label: '所持 前 → 後', value: `${fmt(cast.rescueItemsBefore)} → ${fmt(cast.rescueItemsAfter ?? 0)}個` },
     { label: '成長で獲得 / 接続救済で使用', value: `${fmt(cast.rescueItemsGranted ?? 0)} / ${fmt(cast.rescueItemsBefore + (cast.rescueItemsGranted ?? 0) - (cast.rescueItemsAfter ?? 0))}個` },
   ])}`;

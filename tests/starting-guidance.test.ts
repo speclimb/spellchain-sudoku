@@ -4,8 +4,22 @@ import { relicDescription, rewardOf } from '../src/game/content';
 import { relicGrowthDescription, relicValues } from '../src/game/growth';
 import { parseSave } from '../src/game/storage';
 import { originView } from '../src/ui/board-view';
+import { capacityText } from '../src/ui/chain-guide';
 
 describe('standard longest-origin guidance', () => {
+  it('projects the same manual rescue choice into board guidance and capacity text without spending stock', () => {
+    const save = newSave(); save.meta.clears = 99;
+    const run = startRun(save, 'lumen', 71).run!;
+    run.spellLevel = 200; run.rescueItems = 1; run.rescueMilestones = 1;
+    run.cells = [...run.solution]; run.cells[2] = 0; run.cells[13] = 0;
+    const before = structuredClone(run);
+    expect(originView(run, false, false).maximum?.length).toBe(1);
+    expect(capacityText(run, false)).toContain('温存中');
+    expect(originView(run, false, false, undefined, true).maximum?.length).toBe(2);
+    expect(capacityText(run, false, null, run.character, true)).toContain('この詠唱で使用');
+    expect(originView(run, false, false).maximum?.length).toBe(1);
+    expect(run).toEqual(before);
+  });
   it('shows all tied best legal origins without any relic from the first turn in both modes', () => {
     for (const character of ['fuse', 'scribe', 'lumen'] as const) {
       const save = newSave(); save.meta.clears = 99;

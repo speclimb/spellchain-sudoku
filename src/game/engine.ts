@@ -134,7 +134,7 @@ function measureSheet(source: Run, root: number, fuel: number, rekindled: boolea
 }
 /** Deterministic path/board plan. The only RNG is a private clone used to reveal
  * fresh sheets; source state and the effect/reward streams remain untouched. */
-function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId): CastPlan {
+function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId, useRescue = false): CastPlan {
   const chosen = selectedSkill(source, skill, requested), values = chosen ? skillValues(source, chosen) : null;
   if (source.phase !== 'battle' || !Number.isInteger(cell) || cell < 0 || cell >= 81 || source.cells[cell]) throw new Error('空きマスを選んでください。');
   if (skill ? !canUseSkill(source) : candidates(source.cells, cell).length !== 1) throw new Error(skill ? '魔力8、または詠唱符1枚が必要です。' : '数字が確定したマスを選んでください。');
@@ -148,7 +148,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   run.reservedAuto = 0;
   if (!skill) run.afterglow = false;
   let rekindled = false, hopsLeft = values?.fuseHops ?? 0, reconnectsLeft = values?.reconnects ?? 0, maxShield = sheetShield(source), rawDamage = 0, wardShield = 0, maxMarkedShield = 0;
-  let rescueLeft = canRescueChain(source);
+  let rescueLeft = canRescueChain(source) && (source.endgameBalanceVersion === 1 || useRescue === true);
   let rawWithout: Partial<Record<RelicId, number>> = {};
   const damageRelics = ['pen', 'lens', 'stroke', 'glass', 'amplifier', 'echo'] as const;
   const glassMultiplier = relicValues(run, 'glass').damageMultiplier;
@@ -338,7 +338,7 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
     units: path.reduce((n, event) => n + event.units.length, 0), weak: path.filter(event => event.mark === 'weak').length,
     defeated: false, fullClear: sheetsCompleted > 0, sweep: [], hpBefore: source.hp, enemyBefore: source.enemyHp,
     sheetAdvanced: false, levelsGained: 0, spellLevelBefore: source.spellLevel, spellLevelAfter: source.spellLevel, maxHpGained: 0,
-    ...(source.endgameBalanceVersion === 2 ? { rescueItemsBefore: source.rescueItems!, rescueItemsAfter: run.rescueItems!, rescueItemsGranted: 0 } : {}),
+    ...(source.endgameBalanceVersion === 2 ? { rescueItemsBefore: source.rescueItems!, rescueItemsAfter: run.rescueItems!, rescueItemsGranted: 0, rescueRequested: useRescue === true } : {}),
   };
   const effects: PrimeEffect[] = [];
   for (const id of Object.keys(primeDigits) as PrimeRelicId[]) {
@@ -404,8 +404,8 @@ function settleCast(plan: CastPlan, triggered: ReadonlySet<PrimeRelicId>): Run {
   run.lastReport = report;
   return run;
 }
-export function previewAction(run: Run, cell: number, skill = false, requested?: SkillId): Preview {
-  const plan = planCast(run, cell, skill, requested), minimum = settleCast(plan, new Set());
+export function previewAction(run: Run, cell: number, skill = false, requested?: SkillId, useRescue = false): Preview {
+  const plan = planCast(run, cell, skill, requested, useRescue), minimum = settleCast(plan, new Set());
   const report: Preview = minimum.lastReport!;
   if (plan.effects.length) {
     // The independent damage/reduction effects create four possible combat
@@ -430,12 +430,12 @@ export function previewAction(run: Run, cell: number, skill = false, requested?:
 const longestCache = new Map<string, { cells: number[]; length: number }>();
 /** Cache only path-relevant state, independent of selection/render. Bounded by
  * entries, not chain length. A fresh revision/resource/mode/board invalidates. */
-export function longestOrigins(run: Run, skill = false, requested?: SkillId): { cells: number[]; length: number } {
-  const key = JSON.stringify([run.id, run.revision, run.relicBalanceVersion, run.endgameBalanceVersion, run.rescueItems, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
+export function longestOrigins(run: Run, skill = false, requested?: SkillId, useRescue = false): { cells: number[]; length: number } {
+  const key = JSON.stringify([run.id, run.revision, run.relicBalanceVersion, run.endgameBalanceVersion, run.rescueItems, useRescue, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
   const cached = longestCache.get(key); if (cached) return { cells: [...cached.cells], length: cached.length };
   const result = { cells: [] as number[], length: 0 };
   for (const cell of legalOrigins(run, skill, requested)) {
-    const length = planCast(run, cell, skill, requested).report.path.length;
+    const length = planCast(run, cell, skill, requested, useRescue).report.path.length;
     if (length > result.length) { result.cells = [cell]; result.length = length; }
     else if (length === result.length) result.cells.push(cell);
   }
@@ -485,7 +485,7 @@ export function resolveAction(source: Run, action: Action): Run {
     run.turn = 0; run.phase = 'battle'; run.rewards = []; run.lastReport = null; run.rewardStep = undefined; run.pendingRelicRewards = [];
     }
   } else {
-    const plan = planCast(source, action.cell, action.skill, action.skillId);
+    const plan = planCast(source, action.cell, action.skill, action.skillId, action.useRescue);
     const procs: PrimeProcOutcome[] = plan.effects.map(effect => ({ ...effect, triggered: primeRoll(source.seed, source.castCounter, effect.id) < effect.chance }));
     if (procs.length) plan.report.procs = procs;
     const trinity = procs.find(proc => proc.id === 'trinity');

@@ -76,6 +76,8 @@ export interface Report {
   manaOverflow?: number; manaRestored?: number; proc?: ProcOutcome;
   /** Limited reconnect item accounting; absent in older encounter reports. */
   rescueItemsBefore?: number; rescueItemsAfter?: number; rescueItemsGranted?: number;
+  /** Missing only in reports saved before per-cast item selection existed. */
+  rescueRequested?: boolean;
 }
 /** Forecasts clone board RNG when needed; they never consume source state, roll procs, or choose rewards. */
 export interface Preview extends Report { forecast?: Forecast }
@@ -107,7 +109,7 @@ export interface Run {
   lastReport: Report | null;
 }
 export type Action =
-  | { type: 'play'; cell: number; skill: boolean; skillId?: SkillId; revision: number }
+  | { type: 'play'; cell: number; skill: boolean; skillId?: SkillId; useRescue?: boolean; revision: number }
   | { type: 'reward'; relic: RewardId; replace?: RelicId; revision: number }
   | { type: 'equip'; skills: SkillId[]; revision: number };
 export interface Meta { clears: number; runs: number; wins: number; bestScore: number; bestKills: number; tutorialDone: boolean }

@@ -333,11 +333,24 @@ html:has(.game-layout){scroll-padding-top:calc(12px + 5rem)}
 .cast-controls .cast-button{min-height:56px;gap:12px}
 .cast-controls .cast-label{font-size:inherit;text-align:left;min-width:0}
 .cast-controls .cast-shortcut{display:flex;align-items:center;gap:12px;flex-shrink:0;font-size:inherit}
+.rescue-choice{margin-top:12px}
+.rescue-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:48px;padding:9px 12px;border:1px solid #65758c;border-radius:5px;background:#182639;text-align:left;color:#d2dce8}
+.rescue-toggle>span{min-width:0}
+.rescue-toggle strong{display:block;font-size:13px;font-weight:500}
+.rescue-toggle small{display:block;margin-top:3px;font-size:11px;color:#adbdd0}
+.rescue-toggle b{flex-shrink:0;font-size:12px;font-weight:500;color:#b8d1c2}
+.rescue-toggle.active{border-color:#d2b477;background:#353124}
+.rescue-toggle.active b{color:#f1d49b}
+.rescue-toggle:disabled{opacity:.65;cursor:default}
+.rescue-toggle:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.rescue-choice p{margin:5px 2px 0;font-size:11px;line-height:1.7;color:#aabace}
+.cast-controls .cast-rescue-label{display:block;margin-top:3px;font-size:11px;font-weight:400}
 .cast-shortcut kbd{font:500 .8em var(--sans,sans-serif);border:1px solid currentColor;border-radius:4px;min-width:26px;padding:3px 6px;line-height:1.2;text-align:center;opacity:.8}
 @media(max-width:760px){
   .command-panel{display:flex;flex-direction:column;gap:7px}
   .cast-controls{top:8px;margin:0}
   .cast-controls .cast-button{min-height:48px}
+  .rescue-choice{margin-top:4px}
 }
 
 /* Current sound state stays readable without squeezing the header controls. */

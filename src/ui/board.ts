@@ -214,9 +214,9 @@ export class Board {
     });
     requestAnimationFrame(() => this.game?.scale.refresh());
   }
-  set(run: Run, prediction: Report | null, selected: number | null, skill: boolean, busy = false, inspect: number | null = null, skillId?: SkillId): void {
+  set(run: Run, prediction: Report | null, selected: number | null, skill: boolean, busy = false, inspect: number | null = null, skillId?: SkillId, useRescue = false): void {
     if (!busy && this.scene.ready) this.scene.clearEffects();
-    const origins = originView(run, skill, busy, skillId);
+    const origins = originView(run, skill, busy, skillId, useRescue);
     this.scene.model = { run, prediction, selected, skill, busy, inspect, ...origins }; this.scene.draw();
     if (inspect === null) delete this.host.dataset.inspectStep;
     else this.host.dataset.inspectStep = String(inspect);

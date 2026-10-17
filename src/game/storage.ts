@@ -185,8 +185,10 @@ function validateReport(run: Run): void {
       || !integer(p.rescueItemsAfter, 0, rescueMilestonesAt(afterLevel))
       || !integer(p.rescueItemsGranted) || p.rescueItemsGranted !== rescueMilestonesAt(afterLevel) - rescueMilestonesAt(beforeLevel)
       || p.rescueItemsAfter !== p.rescueItemsBefore - Number(p.path.some((e: any) => e.rescue)) + p.rescueItemsGranted
-      || p.rescueItemsAfter !== run.rescueItems) fail('接続の栞の詠唱記録が不正です。');
-  } else if (['rescueItemsBefore', 'rescueItemsAfter', 'rescueItemsGranted'].some(key => p[key] !== undefined)) fail('接続の栞の詠唱記録が不正です。');
+      || p.rescueItemsAfter !== run.rescueItems
+      || (p.rescueRequested !== undefined && typeof p.rescueRequested !== 'boolean')
+      || (p.rescueRequested === false && p.path.some((e: any) => e.rescue))) fail('接続の栞の詠唱記録が不正です。');
+  } else if (['rescueItemsBefore', 'rescueItemsAfter', 'rescueItemsGranted', 'rescueRequested'].some(key => p[key] !== undefined)) fail('接続の栞の詠唱記録が不正です。');
 
   let completed = p.fullClear ? 1 : 0, finalFull = p.fullClear;
   let finalPath = p.path;

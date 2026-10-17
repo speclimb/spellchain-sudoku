@@ -17,9 +17,9 @@ export function boardView(run: Run, prediction: Report | null, inspect: number |
   return { display, path: visiblePath, current, sheet: display.sheet };
 }
 
-export function originView(run: Run, skill: boolean, busy: boolean, skillId?: SkillId) {
+export function originView(run: Run, skill: boolean, busy: boolean, skillId?: SkillId, useRescue = false) {
   const legal = new Set(busy ? [] : legalOrigins(run, skill, skillId));
-  const maximum = !busy ? longestOrigins(run, skill, skillId) : null;
+  const maximum = !busy ? longestOrigins(run, skill, skillId, useRescue) : null;
   return { legal, maximum, longest: new Set(maximum?.cells ?? []) };
 }
 

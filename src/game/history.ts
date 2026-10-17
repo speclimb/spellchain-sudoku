@@ -18,6 +18,7 @@ export interface HistoryCast {
   fuelBefore: number; fuelAfter: number; tokensBefore: number; tokensAfter: number;
   manaBefore: number; manaAfter: number; charged: number; overflowBefore: number; overflowAfter: number; overflowRestored: number;
   rescueItemsBefore?: number; rescueItemsAfter?: number; rescueItemsGranted?: number;
+  rescueRequested?: boolean;
   stopReason?: 'limit' | 'no-target' | 'board-complete';
 }
 export interface HistoryReward { gameVersion?: string; revision: number; id: RewardId; name: string; description: string; step: string }
@@ -140,6 +141,7 @@ export function recordHistory(save: Save, before: Run, action: Action, gameVersi
       cast.rescueItemsBefore = report.rescueItemsBefore;
       cast.rescueItemsAfter = report.rescueItemsAfter;
       cast.rescueItemsGranted = report.rescueItemsGranted;
+      if (report.rescueRequested !== undefined) cast.rescueRequested = report.rescueRequested;
     }
     battle.casts.push(cast); battle.maxChain = Math.max(battle.maxChain, cast.chain); battle.received += cast.received; battle.hpLost += cast.hpLost; battle.sheetsCompleted += cast.sheetsCompleted;
     battle.status = report.defeated ? 'victory' : after.phase === 'lost' ? 'lost' : 'battle';

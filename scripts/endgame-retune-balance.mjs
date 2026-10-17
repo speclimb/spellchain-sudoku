@@ -3,6 +3,7 @@
  * Run: node scripts/endgame-retune-balance.mjs
  * Defaults: v1 vs unmodified current source, three characters and two seeds.
  * Exploration env: MODES=v1,items,a,b,c,d SEEDS=102 STAGE_LIMIT=200 CAST_LIMIT=450
+ * RESCUE_POLICY=boss|always|never (default boss) controls current finite items.
  */
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
@@ -21,6 +22,8 @@ const stageLimit = Number(process.env.STAGE_LIMIT ?? 200);
 const castLimit = Number(process.env.CAST_LIMIT ?? 450);
 const rootBudget = Number(process.env.ROOT_BUDGET ?? 6);
 const timeLimitSeconds = Number(process.env.TIME_LIMIT_SECONDS ?? 1200);
+const rescuePolicy = process.env.RESCUE_POLICY ?? 'boss';
+if (!['boss', 'always', 'never'].includes(rescuePolicy)) throw new Error(`Invalid RESCUE_POLICY ${rescuePolicy}`);
 const tuning = {
   v1: { attackSlope: 6, attackQuadraticDivisor: null, bossHpRatio: 6, rescue: 'v1 free once per cast' },
   items: { attackSlope: 6, attackQuadraticDivisor: null, bossHpRatio: 6, rescue: 'finite items' },
@@ -70,8 +73,9 @@ for (const mode of modes) {
 }
 
 const method = {
-  description: 'Paired organic initial-state runs; complete frozen v1 source vs current finite-item source with explicit test-only enemy constant overrides. No production changes are made by this script.',
-  snapshot, hashes, runtime: process.version, characters, seeds, modes, tuning, stageLimit, castLimit, rootBudget, timeLimitSeconds,
+  description: 'Paired organic initial-state runs; complete frozen automatic-rescue v1 source vs current manually selected finite-item source with explicit test-only enemy constant overrides. These are new policy-specific trials, not a reproduction of the historical automatic-item totals. No production changes are made by this script.',
+  snapshot, hashes, runtime: process.version, characters, seeds, modes, tuning, stageLimit, castLimit, rootBudget, timeLimitSeconds, rescuePolicy,
+  rescueSelection: 'Current finite-item runs select useRescue before each cast: boss enables it only against bosses, always enables it in every battle, never conserves every item. Selection requires existing stock; an item is spent only when a reconnect actually occurs. Frozen v1 ignores the extra preview argument and action property and retains its automatic free rescue.',
   selection: `At most ${rootBudget} fixed roots per available normal/intrinsic/equipped skill: weak/shield marks then evenly spaced legal roots. Choose guaranteed kill, then capped guaranteed damage minus 15 times worst-case received damage plus 5 for a completed sheet. Ties prefer normal cast. Rewards follow one fixed preference. Never use random proc outcomes or damageMax to choose.`,
   limitations: 'Greedy limited-root policy is neither optimal nor human play. No natural growth is pregranted; meta unlocks only enable character/relic choices. Diverging source can change later board/reward streams. Defeat, stage-limit, cast-limit and time-limit are recorded separately.',
 };
@@ -109,11 +113,14 @@ function rootChoices(e, run, skillId) {
 }
 function bestAction(e, run) {
   let action, report, best = -Infinity;
+  const useRescue = run.endgameBalanceVersion === 2 && (run.rescueItems ?? 0) > 0
+    && (rescuePolicy === 'always' || rescuePolicy === 'boss' && e.enemyForRun(run).isBoss);
   const skillIds = e.canUseSkill(run) ? [undefined, run.character, ...run.equippedSkills] : [undefined];
   for (const skillId of [...new Set(skillIds)]) for (const cell of rootChoices(e, run, skillId)) {
-    const p = e.previewAction(run, cell, !!skillId, skillId);
+    const p = e.previewAction(run, cell, !!skillId, skillId, useRescue);
+    if (run.endgameBalanceVersion === 2 && p.rescueRequested !== useRescue) throw new Error('Current preview did not apply the recorded rescue selection');
     const value = (p.defeated ? 1e15 : 0) + Math.min(run.enemyHp, p.damage) - p.received * 15 + (p.fullClear ? 5 : 0) - (skillId ? .001 : 0);
-    if (value > best) { best = value; action = { type: 'play', cell, skill: !!skillId, skillId, revision: run.revision }; report = p; }
+    if (value > best) { best = value; action = { type: 'play', cell, skill: !!skillId, skillId, useRescue, revision: run.revision }; report = p; }
   }
   if (!action) throw new Error('No legal action');
   return { action, report };
@@ -187,12 +194,13 @@ for (const character of characters) for (const seed of seeds) for (const mode of
       enemyBefore: run.enemyHp, boss: battle.boss, rescueBefore: rescueState(run) };
     run = e.resolveAction(run, action);
     const report = run.lastReport, metrics = castMetrics(report), rescueAfter = rescueState(run);
+    if (run.endgameBalanceVersion === 2 && report.rescueRequested !== action.useRescue) throw new Error('Settlement changed the selected rescue policy');
     if (preview.path.filter(event => event.rescue).length !== metrics.rescues) throw new Error('Preview/settlement rescue count mismatch');
     const usedItems = before.rescueBefore.items === null ? null : metrics.rescues;
     const grantedItems = usedItems === null ? null : rescueAfter.items - before.rescueBefore.items + usedItems;
     if (grantedItems !== null && (!Number.isSafeInteger(grantedItems) || grantedItems < 0 || rescueAfter.items < 0)) throw new Error('Invalid finite item accounting');
     if (grantedItems !== null && (report.rescueItemsBefore !== before.rescueBefore.items || report.rescueItemsAfter !== rescueAfter.items || report.rescueItemsGranted !== grantedItems)) throw new Error('Finite item report/state mismatch');
-    result.casts.push({ ...before, ...metrics, skill: action.skillId ?? null, cell: action.cell,
+    result.casts.push({ ...before, ...metrics, skill: action.skillId ?? null, cell: action.cell, useRescue: action.useRescue,
       damage: report.damage, guaranteedDamage: report.guaranteedDamage, received: report.received,
       incoming: report.incoming, shield: report.shield, hp: run.hp, maxHp: run.maxHp, levelAfter: run.spellLevel,
       rescueAfter, usedItems, grantedItems, defeated: report.defeated });

@@ -8,13 +8,13 @@ import { outcomeText, retaliationText } from './report-presentation';
 export const cellName = (cell: number): string => `${row(cell) + 1}行${col(cell) + 1}列`;
 const unitName = (unit: number): string => unit < 9 ? `同じ行（${unit + 1}行目）` : unit < 18 ? `同じ列（${unit - 8}列目）` : '同じ3×3区画';
 
-export function capacityText(run: Run, skill: boolean, report?: Report | null, skillId: SkillId = run.character): string {
+export function capacityText(run: Run, skill: boolean, report?: Report | null, skillId: SkillId = run.character, useRescue = false): string {
   const count = report?.chain?.initialAuto ?? chainCapacity(run, skill, skillId);
   const extra = run.inventory.includes('echo') || run.inventory.includes('rekindle');
   const carry = run.inventory.includes('wick') && (run.tier.wick ?? 1) >= 2;
   const maximum = carry ? count + 1 : Math.min(count + 1, run.cells.filter(value => !value).length);
   const rescue = run.endgameBalanceVersion === 2
-    ? ` · 接続の栞 ${run.rescueItems ?? 0}個（次は術式Lv.${RESCUE_ITEM_LEVEL + rescueMilestonesAt(run.spellLevel) * RESCUE_ITEM_INTERVAL}で1個）${canRescueChain(run) ? ` · 接続救済は1詠唱1個まで・連鎖詠唱数${RESCUE_COST}消費` : ''}`
+    ? ` · 接続の栞 ${run.rescueItems ?? 0}個（次は術式Lv.${RESCUE_ITEM_LEVEL + rescueMilestonesAt(run.spellLevel) * RESCUE_ITEM_INTERVAL}で1個）${canRescueChain(run) ? useRescue ? ` · この詠唱で使用・再接続時に1個と連鎖詠唱数${RESCUE_COST}を消費` : ' · 温存中（詠唱前に使用を選べます）' : ''}`
     : canRescueChain(run) ? ` · 接続救済1回（${RESCUE_COST}消費）` : '';
   return `起点1マス ＋ 連鎖詠唱数${count}${extra ? '（遺物で追加あり）' : ` ＝ 最大${maximum}連鎖`}${carry ? ' · 残り連鎖詠唱数を次のシートへ' : ''}${run.reservedAuto ? ` · 七の護符の追加＋${run.reservedAuto}を含む` : ''}${skill && skillId === 'fuse' && skillLevel(run, skillId) >= 2 ? ' · 行き止まりで飛び火あり' : ''}${skill && skillId === 'bridge' ? ' · 行き止まりから確定マスへ橋渡し' : ''}${rescue}`;
 }
