@@ -171,8 +171,12 @@ test('an in-flight flagless campaign keeps its level ten relic and codex after s
   const before = await savedGame(page);
   expect(before.run!.progressionVersion).toBeUndefined();
   await page.locator('[data-reward="training"]').click();
+  const committed = await savedGame(page);
+  expect(committed.run!.phase).toBe('battle');
+  expect(committed.run!.stage).toBe(before.run!.stage + 1);
   await resume(page);
   const after = await savedGame(page);
+  expect(after.run).toEqual(committed.run);
   expect(after.run!.progressionVersion).toBeUndefined();
   expect(after.run!.relicLevels!.pen).toBe(10);
   await page.getByRole('button', { name: '遺物図鑑', exact: true }).click();
