@@ -3,9 +3,10 @@ import { createBoardLayout } from './board-generation';
 import { CHARACTERS, RELICS } from './content';
 import { canTakeReward, rollRewards, rollSkillRewards, rollRelicRewards, applyGrowthReward } from './rewards';
 import { skillLevel, selectedSkill, skillValues, relicValues } from './growth';
-import { enemyForRun, enemyIncoming, applyEnemyArmor } from './enemies';
+import { enemyForRun, enemyIncoming, applyEnemyArmor, isFinalBoss, FINAL_BOSS_GROWTH_HEAL_CAP } from './enemies';
 import { effectMetrics, recordContribution } from './contributions';
 import { prepareRelicReward } from './relic-slots';
+import { applyFusion } from './fusions';
 import { activateLimitedRescue, awardRescueItems, canRescueChain, RESCUE_COST } from './endgame';
 import { beginHistory, ensureHistoryRun, recordHistory, forkHistory, historyKey } from './history';
 export { canTakeReward } from './rewards';
@@ -17,7 +18,7 @@ export function newSave(): Save {
 }
 function prepareBoard(run: Run, random: Random): void {
   const source = bank[run.puzzleOrder[run.puzzleCursor]];
-  const layout = createBoardLayout(source, random);
+  const layout = createBoardLayout(source, random, undefined, run.campaignVersion === 1 ? 36 : 30);
   run.cells = layout.cells;
   run.solution = layout.solution;
   run.givens = run.cells.map(Boolean);
@@ -67,11 +68,13 @@ function grow(run: Run, report: Report, levels: number): void {
     report.rescueItemsGranted = (report.rescueItemsGranted ?? 0) + granted;
     report.rescueItemsAfter = run.rescueItems;
   }
-  run.hp = Math.min(run.maxHp, run.hp + levels * 10);
+  const healing = isFinalBoss(run) ? Math.min(FINAL_BOSS_GROWTH_HEAL_CAP, levels * 10) : levels * 10;
+  run.hp = Math.min(run.maxHp, run.hp + healing);
   report.healed += run.hp - before;
   report.levelsGained = levels; report.spellLevelAfter = run.spellLevel; report.maxHpGained = levels * 4;
 }
-export function startRun(save: Save, character: CharacterId, seed: number): Save {
+export function startRun(save: Save, character: CharacterId, seed: number, mode: 'campaign' | 'endless' = 'endless'): Save {
+  if (mode !== 'campaign' && mode !== 'endless') throw new Error('冒険モードが不正です。');
   const chosen = CHARACTERS.find(c => c.id === character);
   if (!chosen || chosen.unlock > save.meta.clears) throw new Error('この術師はまだ解放されていません。');
   const next = { ...structuredClone({ ...save, history: undefined }), history: forkHistory(save.history) }, random = new Random(seed);
@@ -79,6 +82,7 @@ export function startRun(save: Save, character: CharacterId, seed: number): Save
   const run: Run = {
     id: `run-${seed >>> 0}`, seed: seed >>> 0, randomState: seed >>> 0, revision: 0, balanceVersion: 2, castCounter: 0,
     expansionVersion: 1, relicBalanceVersion: 1, stowedRelics: {}, enemyRulesVersion: 1, enemyHealthVersion: 1, endgameBalanceVersion: 2, rescueItems: 0, rescueMilestones: 0, skillLevels: { [character]: 1 }, equippedSkills: [], relicLevels: {}, pendingRelicRewards: [], contributions: { sinceCast: 0, partial: false, battles: [] },
+    mode, progressionVersion: 1, ...(mode === 'campaign' ? { campaignVersion: 1 as const } : {}),
     character, skillRank: 1, stage: 0, turn: 0, phase: 'battle', cells: [], solution: [], givens: [], marks: [],
     puzzleOrder: random.shuffle(bank.map((_, i) => i)), puzzleCursor: 0, sheet: 1, encounterSheet: 1, spellLevel: 1,
     freeSkillTokens: 0, reservedAuto: 0, boons: { defense: 0, magic: 0 },
@@ -251,12 +255,17 @@ function planCast(source: Run, cell: number, skill: boolean, requested?: SkillId
   }
   while (fuel > 0) {
     if (run.cells.every(Boolean)) {
-      if (!relicValues(run, 'wick').carry) break;
+      if (!relicValues(run, 'wick').carry && !(run.campaignVersion === 1 && run.spellLevel >= 30)) break;
       endSegment(); nextBoard(run, boardRandom); beginSegment();
       const roots = run.cells.flatMap((value, target) => !value && initiallySingle[target] ? [target] : []);
       // Stable ascending scan means equal lengths choose the upper-left cell.
       let best = roots[0], length = -1;
-      for (const root of roots) { const measured = measureSheet(run, root, fuel, rekindled, hopsLeft, reconnectsLeft, rescueLeft); if (measured > length) { best = root; length = measured; } }
+      const blanks = run.cells.filter(value => !value).length;
+      for (const root of roots) {
+        const measured = measureSheet(run, root, fuel, rekindled, hopsLeft, reconnectsLeft, rescueLeft);
+        if (measured > length) { best = root; length = measured; }
+        if (length === blanks) break;
+      }
       if (best === undefined) throw new Error('次のシートの確定起点が見つかりません。');
       fill(best, 'chain', null, roots, false, true); current = best;
       continue;
@@ -398,7 +407,7 @@ function settleCast(plan: CastPlan, triggered: ReadonlySet<PrimeRelicId>): Run {
   if (report.defeated) {
     run.stats.kills++; run.score += 500;
     report.sweep = run.cells.flatMap((v, i) => v ? [] : [i]); run.cells = [...run.solution];
-    grow(run, report, (report.sheetsCompleted ?? 0) + 1); run.phase = 'reward';
+    grow(run, report, (report.sheetsCompleted ?? 0) + 1); run.phase = isFinalBoss(run) ? 'won' : 'reward';
   } else if (!run.hp) run.phase = 'lost';
   else if (report.fullClear) { grow(run, report, report.sheetsCompleted!); report.sheetAdvanced = true; }
   run.lastReport = report;
@@ -431,7 +440,7 @@ const longestCache = new Map<string, { cells: number[]; length: number }>();
 /** Cache only path-relevant state, independent of selection/render. Bounded by
  * entries, not chain length. A fresh revision/resource/mode/board invalidates. */
 export function longestOrigins(run: Run, skill = false, requested?: SkillId, useRescue = false): { cells: number[]; length: number } {
-  const key = JSON.stringify([run.id, run.revision, run.relicBalanceVersion, run.endgameBalanceVersion, run.rescueItems, useRescue, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
+  const key = JSON.stringify([run.id, run.revision, run.mode, run.campaignVersion, run.progressionVersion, run.fusions, run.relicBalanceVersion, run.endgameBalanceVersion, run.rescueItems, useRescue, run.phase, run.cells, run.solution, run.givens, run.marks, run.sheet, run.puzzleCursor, run.puzzleOrder, run.randomState, run.character, run.skillRank, run.spellLevel, run.inventory, run.tier, run.afterglow, run.reservedAuto, run.mana, run.freeSkillTokens, skill, requested, run.skillLevels, run.equippedSkills, run.relicLevels]);
   const cached = longestCache.get(key); if (cached) return { cells: [...cached.cells], length: cached.length };
   const result = { cells: [] as number[], length: 0 };
   for (const cell of legalOrigins(run, skill, requested)) {
@@ -447,7 +456,9 @@ export function resolveAction(source: Run, action: Action): Run {
   if (action.revision !== source.revision) throw new Error('この操作はすでに処理されています。');
   let run = structuredClone(source);
   const random = new Random(run.randomState);
-  if (action.type === 'equip') {
+  if (action.type === 'fuse') {
+    applyFusion(run, action.fusion);
+  } else if (action.type === 'equip') {
     if (run.phase !== 'reward' || !run.expansionVersion || action.skills.length > 2 || new Set(action.skills).size !== action.skills.length
       || action.skills.some(id => !['bridge', 'pierce', 'bastion'].includes(id) || !run.skillLevels?.[id])) throw new Error('追加スキルは報酬画面で、習得済みのものを2つまで装備できます。');
     run.equippedSkills = [...action.skills];
@@ -493,7 +504,7 @@ export function resolveAction(source: Run, action: Action): Run {
     run = settleCast(plan, new Set(procs.filter(proc => proc.triggered).map(proc => proc.id)));
     random.state = run.randomState;
     recordContribution(run, run.lastReport!);
-    if (run.lastReport!.defeated) {
+    if (run.lastReport!.defeated && run.phase !== 'won') {
       if (run.expansionVersion && run.balanceVersion === 2 && (run.stage + 1) % 5 === 0) {
         run.rewardStep = 'skill'; run.rewards = rollSkillRewards(run, random);
         run.pendingRelicRewards = rollRelicRewards(run, random);
@@ -510,6 +521,7 @@ export function dispatch(save: Save, action: Action): Save {
   ensureHistoryRun(next);
   next.meta.clears += run.stats.kills - save.run.stats.kills;
   next.meta.bestKills = Math.max(next.meta.bestKills, run.stats.kills);
+  if (run.phase === 'won' && save.run.phase !== 'won') next.meta.wins++;
   if (run.phase === 'won' || run.phase === 'lost') next.meta.bestScore = Math.max(next.meta.bestScore, run.score);
   next.run = run;
   recordHistory(next, save.run, action);

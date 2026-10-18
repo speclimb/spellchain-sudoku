@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { enemyOf, greaterIds, primeIds } from '../src/game/content';
+import { RELICS, enemyOf, greaterIds, primeIds } from '../src/game/content';
 import { chainCapacity, dispatch, newSave, previewAction, resolveAction, spellMultiplier, startRun } from '../src/game/engine';
 import { parseSave } from '../src/game/storage';
 import { Random, singles } from '../src/game/sudoku';
+import { relicLevel, relicLevelGain, relicMaxLevel, relicNextDescription, relicValues, skillLevel } from '../src/game/growth';
+import { fusionLevelRequirement } from '../src/game/fusions';
+import { parseHistory } from '../src/game/history-validation';
 import type { CharacterId, Report, RewardId, Run, Save } from '../src/game/types';
 
 function fixture(seed = 71, character: CharacterId = 'fuse'): Save {
@@ -400,5 +403,89 @@ describe('multiple threes in a single cast', () => {
     expect(actual).toBeDefined(); expect(actual!.path.filter(event => event.value === 3).length).toBeGreaterThanOrEqual(2);
     expect(actual!.proc).toMatchObject({ chance: .3, multiplier: 1.5 });
     expect(actual!.damage).toBe(Math.floor(actual!.baseDamage! * (actual!.proc!.triggered ? 1.5 : 1)) + actual!.clearBonus!);
+  });
+});
+
+describe('versioned mode-specific relic progression', () => {
+  it('keeps old campaigns intact and gives new campaigns eight single-level upgrades', () => {
+    const run = startRun(newSave(), 'fuse', 71, 'campaign').run!;
+    run.progressionVersion = 1; run.stage = 40;
+    expect(relicMaxLevel(run)).toBe(8); expect(fusionLevelRequirement(run)).toBe(8);
+    expect(relicLevelGain(run)).toBe(1);
+    for (const { id } of RELICS) {
+      run.inventory = [id]; run.relicLevels = { [id]: 8 }; run.tier = { [id]: 3 };
+      const legacy = { ...run, progressionVersion: undefined };
+      expect(relicValues(run, id)).toEqual(relicValues(legacy, id));
+      expect(relicNextDescription(run, id)).toContain('Lv.8・最大レベル');
+      legacy.relicLevels = { [id]: 10 };
+      expect(relicLevel(legacy, id)).toBe(10);
+      expect(relicMaxLevel(legacy)).toBe(10); expect(relicLevelGain(legacy)).toBe(2);
+      expect(fusionLevelRequirement(legacy)).toBe(10);
+    }
+  });
+  it('extends every endless relic meaningfully through level twenty with finite bounded effects', () => {
+    const run = startRun(newSave(), 'fuse', 71, 'endless').run!;
+    run.progressionVersion = 1;
+    expect(relicMaxLevel(run)).toBe(20); expect(fusionLevelRequirement(run)).toBe(10);
+    expect(relicLevelGain(run)).toBe(1);
+    for (const { id } of RELICS) for (const tier of [1, 2, 3]) {
+      run.inventory = [id]; run.tier = { [id]: tier }; run.acquisitionRank = { [id]: primeIds.includes(id) ? 3 : 1 };
+      run.relicLevels = { [id]: 10 };
+      let previous = relicValues(run, id);
+      expect(previous).toEqual(relicValues({ ...run, progressionVersion: undefined }, id));
+      for (let lv = 11; lv <= 20; lv++) {
+        run.relicLevels[id] = lv;
+        const current = relicValues(run, id);
+        expect(Object.values(current).every(value => typeof value === 'boolean' || Number.isFinite(value)), `${id} Lv.${lv}`).toBe(true);
+        expect(Object.entries(current).some(([key, value]) => key !== 'level' && value !== previous[key as keyof typeof previous]), `${id} Lv.${lv} changes an effect`).toBe(true);
+        expect(current.echoes).toBeLessThanOrEqual(3); expect(current.overflow).toBeLessThanOrEqual(8);
+        expect(current.chance).toBeLessThanOrEqual(.85);
+        previous = current;
+      }
+      expect(relicNextDescription(run, id)).toContain('Lv.20・最大レベル');
+    }
+    run.skillLevels = { fuse: 20 };
+    expect(skillLevel(run, 'fuse')).toBe(10);
+  });
+  it('validates active and archived relic caps without upgrading or clamping old saves', () => {
+    for (const mode of ['campaign', 'endless'] as const) for (const version of [undefined, 1] as const) {
+      const save = startRun(newSave(), 'fuse', 71, mode), run = save.run!;
+      if (version === undefined) delete run.progressionVersion; else run.progressionVersion = version;
+      const maximum = relicMaxLevel(run);
+      run.inventory = ['pen']; run.relicLevels = { pen: maximum }; run.acquisitionRank = { pen: 1 }; run.tier = { pen: 3 };
+      run.stowedRelics = { ward: { level: maximum, rank: 1, tier: 3 } };
+      expect(parseSave(JSON.stringify(save))).toEqual(save);
+      const over = structuredClone(save); over.run!.relicLevels!.pen = maximum + 1;
+      expect(() => parseSave(JSON.stringify(over))).toThrow();
+      const archived = structuredClone(save); archived.run!.stowedRelics!.ward!.level = maximum + 1;
+      expect(() => parseSave(JSON.stringify(archived))).toThrow();
+      const skill = structuredClone(save); skill.run!.skillLevels!.fuse = 11;
+      expect(() => parseSave(JSON.stringify(skill))).toThrow();
+    }
+    const invalid = startRun(newSave(), 'fuse', 71, 'endless');
+    (invalid.run as any).progressionVersion = 2;
+    expect(() => parseSave(JSON.stringify(invalid))).toThrow('モード');
+    invalid.run!.progressionVersion = 1; delete invalid.run!.mode;
+    expect(() => parseSave(JSON.stringify(invalid))).toThrow('モード');
+  });
+  it('round trips a level-twenty fused cast and its history while rejecting skill levels above ten', () => {
+    const save = startRun(newSave(), 'fuse', 71, 'endless'), run = save.run!;
+    run.progressionVersion = 1; run.stage = 5; run.stats.kills = 5; run.enemyHp = 1;
+    run.inventory = ['pen', 'gold']; run.relicLevels = { pen: 20, gold: 20 };
+    run.tier = { pen: 3, gold: 3 }; run.acquisitionRank = { pen: 1, gold: 1 };
+    run.fusions = ['world-script']; run.lastFusionStage = 4;
+    const root = run.givens.findIndex(given => !given);
+    run.cells = [...run.solution]; run.cells[root] = 0; run.hp = 10;
+    save.history = undefined;
+    const before = structuredClone(save), preview = previewAction(run, root);
+    expect(save).toEqual(before);
+    const next = dispatch(save, play(run, root));
+    expect(next.run!.lastReport!.damage).toBe(preview.damage);
+    expect(next.run!.lastReport!.relicHealed).toBe(18);
+    expect(parseSave(JSON.stringify(next))).toEqual(next);
+    expect(next.history!.runs.at(-1)!.build!.relics.every(relic => relic.level === 20)).toBe(true);
+    const invalidHistory = structuredClone(next.history!);
+    invalidHistory.runs.at(-1)!.build!.skills[0].level = 11;
+    expect(parseHistory(invalidHistory)!.runs.at(-1)!.build).toBeUndefined();
   });
 });

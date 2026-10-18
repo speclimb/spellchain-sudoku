@@ -401,4 +401,29 @@ html:has(.game-layout){scroll-padding-top:calc(12px + 9rem)}
 
 /* Build provenance stays readable without competing with play controls. */
 .build-version { margin: -8px 0 0; text-align: right; color: #a7b4c5; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.patch-notes-launch{padding:5px 0;color:var(--gold)}
+.modal.wide.patch-notes-modal{width:min(820px,100%)}
+.patch-release{margin-top:24px;color:#b8c5d9;font-size:15px;line-height:1.9;overflow-wrap:anywhere}
+.patch-release h3{font:28px var(--serif);color:var(--gold)}
+.patch-lead{margin:10px 0 24px}
+.patch-release section{margin:24px 0}
+.patch-release h4{color:#e4cfaa;font-size:17px;margin-bottom:10px}
+.patch-release ul{padding-left:1.4em}
+.patch-release li{margin:9px 0}
+.patch-release .help-note{font-size:14px}
+.build-details{margin:20px 0;color:#a7b4c5;line-height:1.8;font-size:13px}
+.build-details summary{cursor:pointer;color:var(--gold);padding:8px 0}
+.build-details code{display:block;overflow-wrap:anywhere;white-space:normal;margin-top:8px}
 .history-version { color: #a7b4c5; font-size: var(--font-small, 12px); line-height: 1.6; overflow-wrap: anywhere; }
+.mode-picker { display: flex; gap: 10px; margin: 22px 0 0; flex-wrap: wrap; }
+.mode-picker button { flex: 1; min-width: 125px; padding: 12px 14px; text-align: left; border: 1px solid #77706a; border-radius: 10px; background: transparent; color: inherit; }
+.mode-picker button[aria-pressed="true"] { border-color: #aa8251; background: #ae854b22; }
+.mode-picker strong, .mode-picker small { display: block; }
+.mode-picker small { margin-top: 5px; line-height: 1.5; }
+.fusion-rewards, .fusion-codex { margin: 20px 0; padding: 16px; border: 1px solid #b18b55; border-radius: 12px; background: #ad7b3810; }
+.fusion-rewards p, .fusion-codex p { line-height: 1.7; }
+.fusion-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.fusion-card { display: flex; flex-direction: column; gap: 10px; text-align: left; padding: 16px; border: 1px solid #b18b5570; border-radius: 10px; background: transparent; color: inherit; line-height: 1.6; }
+.fusion-card strong { font-size: 18px; }
+.fusion-card small, .fusion-card span { display: block; }
+.fusion-card b { margin-top: auto; }

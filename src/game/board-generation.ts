@@ -2,8 +2,11 @@ import { connectedSingles, near, Random, singles } from './sudoku.ts';
 
 export interface PuzzleSource { id: string; puzzle: string; solution: string }
 export interface BoardLayout { cells: number[]; solution: number[] }
-export const MIN_BOARD_CHAIN = 30;
+// A full-sheet route is essential: one leftover cell can prevent an otherwise
+// hundred-input cast from carrying its remaining fuel into the next sheet.
+export const MIN_BOARD_CHAIN = 36;
 export const MAX_LAYOUT_RETRIES = 15;
+const MAX_SOURCE_RETRIES = 256;
 
 /** Keep the original transform's random draws, even when its layout is rejected. */
 export function transformPuzzle(source: PuzzleSource, random: Random): BoardLayout {
@@ -43,34 +46,57 @@ export function longestNaturalChain(layout: BoardLayout, echoes = 0, stopAt = 81
   return longest;
 }
 
-/** Every fresh layout supports a long normal route with or without Echo Lv.1–10. */
-export function isChainFriendly(layout: BoardLayout): boolean {
-  return [0, 1, 2, 3].every(echoes => longestNaturalChain(layout, echoes, MIN_BOARD_CHAIN) >= MIN_BOARD_CHAIN);
+/** Every fresh layout supports a full normal route through Echo's fused +2 bonus. */
+export function isChainFriendly(layout: BoardLayout, minimumChain = MIN_BOARD_CHAIN): boolean {
+  const echoes = minimumChain < MIN_BOARD_CHAIN ? [0, 1, 2, 3] : [0, 1, 2, 3, 4, 5];
+  return echoes.every(count => longestNaturalChain(layout, count, minimumChain) >= minimumChain);
 }
 
 const layoutCache = new Map<string, { layout: BoardLayout; randomState: number }>();
+const sourceCache = new Map<string, BoardLayout>();
 const cloneLayout = (layout: BoardLayout): BoardLayout => ({ cells: [...layout.cells], solution: [...layout.solution] });
 
+/** Certify a geometry without replacing a source or changing its deck index.
+ * Original 30-chain sources remain valid save references; only future layouts
+ * change. The fixed private stream makes fallback independent of retry budget. */
+function certifiedSource(source: PuzzleSource, minimumChain: number): BoardLayout {
+  const key = `${source.puzzle}:${source.solution}:${minimumChain}`;
+  const cached = sourceCache.get(key);
+  if (cached) return cached;
+  let layout = { cells: [...source.puzzle].map(Number), solution: [...source.solution].map(Number) };
+  const random = new Random(0x6a09e667);
+  for (let attempt = 0; attempt <= MAX_SOURCE_RETRIES; attempt++) {
+    if (isChainFriendly(layout, minimumChain)) {
+      if (sourceCache.size >= 256) sourceCache.delete(sourceCache.keys().next().value!);
+      sourceCache.set(key, layout);
+      return layout;
+    }
+    layout = transformPuzzle(source, random);
+  }
+  throw new Error(`問題 ${source.id} に全マス連鎖できる配置がありません。`);
+}
+
 /** Bounded deterministic retries never consume the board/deck/reward stream.
- * The bundled source layouts are also certified, so a digit-only fallback
- * guarantees the floor even when every random geometry is rejected. */
-export function createBoardLayout(source: PuzzleSource, random: Random, maxRetries = MAX_LAYOUT_RETRIES): BoardLayout {
-  const key = `${source.puzzle}:${source.solution}:${random.state}:${maxRetries}`;
+ * A certified source geometry plus a digit-only shuffle guarantees the floor
+ * even when every random geometry is rejected. */
+export function createBoardLayout(source: PuzzleSource, random: Random, maxRetries = MAX_LAYOUT_RETRIES, minimumChain = MIN_BOARD_CHAIN): BoardLayout {
+  const key = `${source.puzzle}:${source.solution}:${random.state}:${maxRetries}:${minimumChain}`;
   const cached = layoutCache.get(key);
   if (cached) { random.state = cached.randomState; return cloneLayout(cached.layout); }
   let layout = transformPuzzle(source, random);
-  if (!isChainFriendly(layout)) {
+  if (!isChainFriendly(layout, minimumChain)) {
     const retries = new Random(random.state ^ 0xa54ff53a);
     let accepted = false;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const candidate = transformPuzzle(source, retries);
-      if (isChainFriendly(candidate)) { layout = candidate; accepted = true; break; }
+      if (isChainFriendly(candidate, minimumChain)) { layout = candidate; accepted = true; break; }
     }
     if (!accepted) {
+      const certified = certifiedSource(source, minimumChain);
       const digits = [0, ...new Random(random.state ^ 0x510e527f).shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9])];
       layout = {
-        cells: [...source.puzzle].map(value => digits[Number(value)]),
-        solution: [...source.solution].map(value => digits[Number(value)]),
+        cells: certified.cells.map(value => digits[value]),
+        solution: certified.solution.map(value => digits[value]),
       };
     }
   }

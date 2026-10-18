@@ -1,6 +1,6 @@
 import { percentText } from '../format-number';
 import type { CharacterId, GreaterRelicId, RelicId, RepeatableRewardId, RewardId, Run, SkillId } from './types';
-import { relicGrowthDescription, relicLevel, relicTierLevel, relicValues, skillDescriptionFor, skillLevel, skillOf, type SkillRun, type RelicRun } from './growth';
+import { relicGrowthDescription, relicLevel, relicLevelGain, relicMaxLevel, relicTierLevel, relicValues, skillDescriptionFor, skillLevel, skillOf, type SkillRun, type RelicRun } from './growth';
 export interface Character { id: CharacterId; name: string; symbol: string; title: string; passive: string; skill: string; skillName: string; unlock: number; affinity: RelicId[] }
 export const CHARACTERS: Character[] = [
   { id: 'fuse', name: '導火術師', symbol: '✦', title: '連鎖をつなぐ者', passive: '連鎖詠唱数＋1', skillName: '星火連環', skill: '任意の空きマスから始動。この手の連鎖詠唱数をさらに＋4。', unlock: 0, affinity: ['wick', 'echo', 'rekindle', 'lens'] },
@@ -98,7 +98,7 @@ function relicRewardState(run: Run, id: RewardId): { next: Run; relicId: RelicId
     next.relicLevels = { ...next.relicLevels, [relicId]: archived?.level ?? 1 };
     if (archived) next.tier[relicId] = archived.tier;
   } else if (!greater && !apex) {
-    if (run.expansionVersion && run.rewardStep !== 'legacy') next.relicLevels = { ...next.relicLevels, [relicId]: Math.min(10, before + 1) };
+    if (run.expansionVersion && run.rewardStep !== 'legacy') next.relicLevels = { ...next.relicLevels, [relicId]: Math.min(relicMaxLevel(run), before + relicLevelGain(run)) };
     if (primeIds.includes(relicId)) next.acquisitionRank[relicId] = Math.min(3, (run.acquisitionRank[relicId] ?? 1) + 1);
   }
   if (greater) next.tier[relicId] = Math.max(2, tier);

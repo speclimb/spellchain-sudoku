@@ -1,10 +1,28 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-for(const width of [320,390,1280]) test(`version visible on title and play, history and JSON at ${width}px`,async({page})=>{
-  await page.setViewportSize({width,height:900}); await page.goto('/');
-  const label=page.locator('[data-build-version]'); await expect(label).toContainText('開発版');
-  const version=await label.getAttribute('data-build-version'); expect(version).toMatch(/^0\.1\.0\+.+\.dev$/);
+for(const width of [320,390,1920]) test(`version visible on title and play, history and JSON at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:1080}); await page.goto('/');
+  const label=page.locator('[data-build-version]'); await expect(label).toHaveText('v0.2.0');
+  const version=await label.getAttribute('data-build-version'); expect(version).toMatch(/^0\.2\.0\+.+\.dev$/);
+  await page.getByRole('button',{name:'設定',exact:true}).click();
+  const settings=page.getByRole('dialog',{name:'設定',exact:true});
+  await settings.locator('summary').filter({hasText:'バージョン詳細'}).click();
+  await expect(settings.locator('[data-build-details]')).toHaveText(version!);
+  await settings.getByRole('button',{name:'閉じる',exact:true}).click();
+  const patchButton=page.getByRole('button',{name:'パッチノート',exact:true});
+  await patchButton.click();
+  const notes=page.getByRole('dialog',{name:'パッチノート',exact:true});
+  await expect(notes).toContainText('極位・Lv.8');
+  await expect(notes).toContainText('Lv.20');
+  await expect(notes).toContainText('15％');
+  await expect(notes).toContainText('v0.2.0');
+  expect(await notes.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  await page.screenshot({path:`.runtime/patch-notes-${width}.png`});
+  await notes.locator('.codex-scroll').evaluate(el=>el.scrollTop=el.scrollHeight);
+  await expect(notes.getByRole('button',{name:'閉じる',exact:true})).toBeInViewport();
+  await page.keyboard.press('Escape');
+  await expect(notes).toHaveCount(0); await expect(patchButton).toBeFocused();
   await page.screenshot({path:`.runtime/version-title-${width}.png`});
   await page.evaluate(async()=>{
     const ep='/src/game/engine.ts'; const {newSave,startRun,dispatch,legalOrigins}=await import(/* @vite-ignore */ ep);

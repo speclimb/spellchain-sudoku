@@ -1,5 +1,6 @@
 import { numberText, percentText } from '../format-number';
 import type { CharacterId, RelicId, Run, SkillId } from './types';
+import { fusionForRelic } from './fusions';
 
 export const MAX_GROWTH_LEVEL = 10;
 export const MAX_EQUIPPED_SKILLS = 2;
@@ -13,8 +14,8 @@ export const SKILLS: SkillDefinition[] = [
   { id: 'bastion', name: '護星砲', symbol: '⬡', kind: '守護', description: '守護に応じた追加攻撃。守護を蓄え、守護マスから始めると強力な追撃。' },
 ];
 export const skillOf = (id: SkillId): SkillDefinition => SKILLS.find(skill => skill.id === id)!;
-const level = (value: number | undefined, fallback: number) => Math.min(10, Math.max(1, Math.floor(Number.isFinite(value) ? value! : fallback)));
-export type SkillRun = Pick<Run, 'character' | 'skillRank'> & Partial<Pick<Run, 'expansionVersion' | 'skillLevels' | 'equippedSkills'>>;
+const level = (value: number | undefined, fallback: number, maximum = MAX_GROWTH_LEVEL) => Math.min(maximum, Math.max(1, Math.floor(Number.isFinite(value) ? value! : fallback)));
+export type SkillRun = Pick<Run, 'character' | 'skillRank'> & Partial<Pick<Run, 'expansionVersion' | 'skillLevels' | 'equippedSkills' | 'campaignVersion'>>;
 export function skillLevel(run: SkillRun, id: SkillId): number {
   if (!run.expansionVersion) return id === run.character ? run.skillRank : 0;
   if (run.skillLevels?.[id] !== undefined) return level(id === run.character ? Math.max(run.skillLevels[id]!, run.skillRank) : run.skillLevels[id], 1);
@@ -47,12 +48,22 @@ export function skillValues(run: SkillRun, id: SkillId): SkillValues {
   // A bounded, once-per-cast follow-up scales with the actual ordinary attack,
   // so each additional skill retains its niche as damage relics grow.
   if (id === 'bridge' || id === 'pierce' || id === 'bastion') result.situationalAttack = [3, 4, 4.3, 4.6, 5, 5.3, 5.6, 5.9, 6.2, 7][index];
+  // Full-sheet campaign chains already amplify every completion. Keep skill
+  // growth useful at every level without multiplying that advantage sixfold.
+  if (run.campaignVersion === 1) {
+    if (id === 'scribe') result.completionMultiplier = 1.5 + .8 * index / 9;
+    if (id === 'lumen') result.damageMultiplier = 1.4 + .5 * index / 9;
+    if (id === 'bastion') result.situationalAttack = 1.2 + 1.8 * index / 9;
+  }
   return result;
 }
-export type RelicRun = Pick<Run, 'inventory' | 'acquisitionRank' | 'tier'> & Partial<Pick<Run, 'expansionVersion' | 'relicLevels' | 'relicBalanceVersion'>>;
+export type ProgressionRun = Partial<Pick<Run, 'mode' | 'progressionVersion'>>;
+export const relicMaxLevel = (run: ProgressionRun): number => run.progressionVersion === 1 ? run.mode === 'campaign' ? 8 : 20 : 10;
+export type RelicRun = Pick<Run, 'inventory' | 'acquisitionRank' | 'tier'> & Partial<Pick<Run, 'expansionVersion' | 'relicLevels' | 'relicBalanceVersion' | 'campaignVersion' | 'fusions' | 'mode' | 'progressionVersion'>>;
+export const relicLevelGain = (run: Pick<Run, 'campaignVersion' | 'stage' | 'progressionVersion'>): number => run.progressionVersion === 1 ? 1 : run.campaignVersion === 1 && run.stage >= 19 ? 2 : 1;
 export function relicLevel(run: RelicRun, id: RelicId): number {
   if (!run.inventory.includes(id)) return 0;
-  return run.expansionVersion ? level(run.relicLevels?.[id], run.acquisitionRank[id] ?? 1) : 1;
+  return run.expansionVersion ? level(run.relicLevels?.[id], run.acquisitionRank[id] ?? 1, relicMaxLevel(run)) : 1;
 }
 export function relicTierLevel(run: RelicRun, id: RelicId): number { return Math.max(1, Math.min(run.expansionVersion ? 3 : 2, Math.floor(run.tier[id] ?? 1))); }
 export const relicTierLabel = (run: RelicRun, id: RelicId): string => ['通常', '上位', '極位'][relicTierLevel(run, id) - 1];
@@ -71,8 +82,9 @@ export function relicValues(run: RelicRun, id: RelicId): RelicValues {
   if (!lv) return result;
   // Finite, diminishing growth for rates. The first three prime acquisitions
   // retain exactly 30/45/60%; rank and tier are persisted independently of level.
-  const diminishing = [0, .05, .1, .14, .18, .21, .24, .265, .29, .31][n];
-  const chanceBonus = [0, 0, 0, .06, .10, .13, .155, .175, .19, .20][n];
+  const extraLevels = Math.max(0, n - 9);
+  const diminishing = [0, .05, .1, .14, .18, .21, .24, .265, .29, .31][Math.min(9, n)] + extraLevels * .01;
+  const chanceBonus = [0, 0, 0, .06, .10, .13, .155, .175, .19, .20][Math.min(9, n)] + extraLevels * .005;
   if (id === 'wick') { result.auto = 2 + n + (tier === 3 ? 2 : 0); result.carry = tier >= 2; }
   if (id === 'echo') { result.echoes = lv >= 10 && run.expansionVersion ? 3 : lv >= 5 && run.expansionVersion ? 2 : 1; result.echoDamage = n * 2 + t * 6; }
   if (id === 'rekindle') result.rekindleAuto = 3 + n + t * 2;
@@ -100,13 +112,39 @@ export function relicValues(run: RelicRun, id: RelicId): RelicValues {
   }
   if (['duality', 'trinity', 'quint', 'sept'].includes(id)) {
     const rank = Math.min(3, Math.max(1, Math.floor(run.acquisitionRank[id] ?? 1)));
-    result.chance = Math.min(.8, [.3, .45, .6][rank - 1] + chanceBonus);
-    const primeGrowth = [0, .05, .1, .14, .18, .21, .24, .265, .29, .31][Math.max(0, n - 2)];
+    result.chance = Math.min(extraLevels ? .85 : .8, [.3, .45, .6][rank - 1] + chanceBonus);
+    const primeIndex = Math.max(0, n - 2);
+    const primeGrowth = [0, .05, .1, .14, .18, .21, .24, .265, .29, .31][Math.min(9, primeIndex)] + Math.max(0, primeIndex - 9) * .01;
     if (id === 'trinity') result.primeValue = [1.5, 2, 2.4][t] + primeGrowth;
     if (id === 'duality') result.primeValue = Math.min(.6, [.25, .5, .6][t] + primeGrowth * .25);
     if (id === 'quint') result.primeValue = Math.min(3, tier);
     if (id === 'sept') result.primeValue = [7, 14, 21][t] + Math.max(0, n - 2);
   }
+  // Campaign values reward completion, precision and defense alongside attack
+  // multipliers. Old and endless encounters retain their existing values.
+  if (run.campaignVersion === 1) {
+    if (id === 'pen') result.completion = 24 + n * 8 + t * 18;
+    if (id === 'ward') result.ward = 2 + n + t;
+    if (id === 'echo') result.echoDamage = n * 4 + t * 10;
+    if (id === 'stroke') result.strokeCells += Math.floor(n * .75) + t * 2;
+    if (id === 'lens') { result.weakDamage = 20 + n * 5 + t * 18; result.weakRootDamage = 12 + n * 3 + t * 12; }
+    if (id === 'glass') result.damageMultiplier = 1.15 + diminishing * .3 + t * .05;
+    if (id === 'gold') result.completionHeal = 3 + Math.floor(n / 2) + t * 3;
+    if (id === 'trinity') result.primeValue = [1.35, 1.55, 1.75][t] + diminishing * .3;
+    if (id === 'duality') result.primeValue = [.25, .32, .4][t];
+  }
+  const fusion = fusionForRelic(run, id)?.id;
+  if (fusion === 'eternal-flame') { if (id === 'wick') result.auto += 6; if (id === 'rekindle') result.rekindleAuto += 6; }
+  if (fusion === 'star-choir') { if (id === 'echo') { result.echoes += 2; result.echoDamage += 16; } if (id === 'sept') { result.chance += .1; result.primeValue += 12; } }
+  if (fusion === 'world-script') { if (id === 'pen') result.completion += 65; if (id === 'gold') { result.completionHeal += 8; result.scoreMultiplier += .5; } }
+  if (fusion === 'sanctuary') { if (id === 'ward') result.ward += run.campaignVersion === 1 ? 4 : 8; if (id === 'duality') result.chance += .15; }
+  if (fusion === 'astral-engine') { if (id === 'battery') { result.charge += 3; result.overflow = Math.min(8, result.overflow + 2); } if (id === 'amplifier') result.skillMultiplier += .35; }
+  if (fusion === 'dawn-heart') { if (id === 'afterglow') result.afterglowAuto += 10; if (id === 'quint') result.chance += .15; }
+  if (fusion === 'prism-spear') { if (id === 'lens') { result.weakDamage += 60; result.weakRootDamage += 40; } if (id === 'glass') result.damageMultiplier += .15; }
+  if (fusion === 'sevenfold-script') { if (id === 'stroke') { result.strokeCells += 12; result.strokeMultiplier += .35; } if (id === 'sept') result.primeValue += 8; }
+  if (fusion === 'twin-covenant') { result.chance += .1; if (id === 'trinity') result.primeValue += .2; }
+  if (fusion === 'fate-crown') { if (id === 'trinity') result.primeValue += .25; if (id === 'quint') result.chance += .15; }
+  result.chance = Math.min(.95, result.chance);
   return result;
 }
 const percent = (value: number): string => `${percentText(value)}％`;
@@ -153,11 +191,13 @@ export function relicGrowthDescription(run: RelicRun, id: RelicId): string {
 export function relicNextDescription(run: Run, id: RelicId): string {
   const lv = relicLevel(run, id), tier = relicTierLevel(run, id);
   const tierHint = tier >= 3 ? '極位に到達。' : `ボスで${tier === 1 ? '上位' : 'Lv.5以降に極位'}へ進化可能。`;
-  if (lv >= 10) return `Lv.10・最大レベル。${tierHint}`;
+  const maximum = relicMaxLevel(run);
+  if (lv >= maximum) return `Lv.${maximum}・最大レベル。${tierHint}`;
   const next = structuredClone(run);
-  next.expansionVersion = 1; next.relicBalanceVersion = 1; next.relicLevels = { ...next.relicLevels, [id]: lv + 1 };
+  const nextLevel = Math.min(maximum, lv + relicLevelGain(run));
+  next.expansionVersion = 1; next.relicBalanceVersion = 1; next.relicLevels = { ...next.relicLevels, [id]: nextLevel };
   if (!next.inventory.includes(id)) next.inventory.push(id);
   if (['duality', 'trinity', 'quint', 'sept'].includes(id)) next.acquisitionRank[id] = Math.min(3, (run.acquisitionRank[id] ?? (lv ? 1 : 0)) + 1);
-  return `次：Lv.${lv + 1}。${relicGrowthDescription(next, id)} ${tierHint}`;
+  return `次：Lv.${nextLevel}。${relicGrowthDescription(next, id)} ${tierHint}`;
 }
 export const intrinsicSkill = (character: CharacterId): SkillId => character;

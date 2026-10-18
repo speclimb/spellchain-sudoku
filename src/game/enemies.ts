@@ -3,13 +3,13 @@ import type { Run } from './types';
 
 export type EnemySymbol = 'ember' | 'wing' | 'guardian' | 'eye' | 'star' | 'dragon' | 'frost' | 'mirror';
 export type EnemyAttackStyle = 'fireball' | 'feathers' | 'pillars' | 'ray' | 'absorption' | 'breath' | 'frost' | 'mirror';
-export type EnemyPattern = 'steady' | 'third-heavy' | 'charge-strike';
-type EnemyRun = Pick<Run, 'stage' | 'balanceVersion' | 'enemyRulesVersion' | 'enemyHealthVersion' | 'endgameBalanceVersion'>;
+export type EnemyPattern = 'steady' | 'third-heavy' | 'charge-strike' | 'escalating';
+type EnemyRun = Pick<Run, 'stage' | 'balanceVersion' | 'enemyRulesVersion' | 'enemyHealthVersion' | 'endgameBalanceVersion' | 'mode' | 'campaignVersion' | 'progressionVersion'>;
 type IntentRun = EnemyRun & Pick<Run, 'turn'>;
 type EnemyBase = ReturnType<typeof enemyOf>;
 export interface Enemy extends Omit<EnemyBase, 'symbol'> {
   symbol: EnemySymbol; attackStyle: EnemyAttackStyle; attackName: string;
-  behavior: string; pattern: EnemyPattern; armor: number;
+  behavior: string; pattern: EnemyPattern; armor: number; attackRamp?: number;
 }
 export interface EnemyIntent {
   style: EnemyAttackStyle; name: string; behavior: string;
@@ -32,6 +32,18 @@ const EXTRA_ENEMIES = [
 ];
 const ORDINARY_CYCLE = [0, 1, 2, 3, 6, 7] as const;
 const cap = (value: number) => Math.min(Number.MAX_SAFE_INTEGER, value);
+export const CAMPAIGN_BATTLES = 100;
+export const FINAL_BOSS_HP = 2_200_000_000;
+export const FINAL_BOSS_ATTACK = 550;
+export const FINAL_BOSS_ATTACK_RAMP = 50;
+export const FINAL_BOSS_GROWTH_HEAL_CAP = 60;
+export const PROGRESSION_FINAL_BOSS_HP = 3_300_000_000;
+export const PROGRESSION_FINAL_BOSS_ATTACK = 600;
+export const PROGRESSION_FINAL_BOSS_ATTACK_RAMP = 50;
+export const CAMPAIGN_PATH_HP_GROWTH = 12;
+export const CAMPAIGN_BOSS_HP_GROWTH = 6;
+export const CAMPAIGN_BOSS_ATTACK_GROWTH = 6;
+export const isFinalBoss = (run: EnemyRun): boolean => run.mode === 'campaign' && run.stage === CAMPAIGN_BATTLES - 1;
 // Version 2 tuning is fixed by encounter depth, independent of player growth.
 // Keep these separate so deterministic balance runs can compare curve candidates.
 export const ENDGAME_ATTACK_SLOPE = 8;
@@ -85,9 +97,24 @@ export function enemyAt(stage: number, balanceVersion: 1 | 2 = 2, enemyRulesVers
 
 /** Missing rules mean a saved, already-started legacy encounter. */
 export function enemyForRun(run: EnemyRun): Enemy {
-  return enemyAt(run.stage, run.balanceVersion, run.enemyRulesVersion ?? 0, run.enemyHealthVersion ?? 0, run.endgameBalanceVersion ?? 0);
+  const enemy = enemyAt(run.stage, run.balanceVersion, run.enemyRulesVersion ?? 0, run.enemyHealthVersion ?? 0, run.endgameBalanceVersion ?? 0);
+  if (run.mode === 'campaign' && run.progressionVersion === 1 && !isFinalBoss(run)) {
+    const wave = run.stage + 1;
+    const factor = enemy.isBoss ? 1 + CAMPAIGN_BOSS_HP_GROWTH * (Math.max(0, wave - 20) / 80) ** 2
+      : 1 + CAMPAIGN_PATH_HP_GROWTH * (Math.max(0, wave - 25) / 75) ** 2;
+    enemy.hp = cap(Math.round(enemy.hp * factor));
+    if (enemy.isBoss) enemy.attack = cap(enemy.attack + Math.max(0, wave - 20) * CAMPAIGN_BOSS_ATTACK_GROWTH);
+  }
+  const current = run.progressionVersion === 1;
+  const attackRamp = current ? PROGRESSION_FINAL_BOSS_ATTACK_RAMP : FINAL_BOSS_ATTACK_RAMP;
+  return isFinalBoss(run) ? { ...enemy, name: '終焉を綴る竜・ヌル', title: 'THE LAST WORD',
+    lore: '百の戦いの果て。育てたすべての詠唱で、終焉の一文を書き換えよ。',
+    symbol: 'dragon', attackStyle: 'breath', attackName: '終焉の詠唱',
+    hp: current ? PROGRESSION_FINAL_BOSS_HP : FINAL_BOSS_HP, attack: current ? PROGRESSION_FINAL_BOSS_ATTACK : FINAL_BOSS_ATTACK, attackRamp, strongEvery: 0, armor: 0, pattern: 'escalating',
+    behavior: `毎手反撃。攻撃力が毎手${attackRamp}上昇。終焉の結界：成長による回復は1詠唱${FINAL_BOSS_GROWTH_HEAL_CAP}まで。` } : enemy;
 }
 function attackOn(enemy: Enemy, turn: number): number {
+  if (enemy.pattern === 'escalating') return cap(enemy.attack + turn * (enemy.attackRamp ?? FINAL_BOSS_ATTACK_RAMP));
   if (enemy.pattern === 'charge-strike') return turn % 2 === 0 ? 0 : cap(enemy.attack * 2);
   return cap(enemy.attack * (enemy.strongEvery && (turn + 1) % enemy.strongEvery === 0 ? 2 : 1));
 }
@@ -101,7 +128,7 @@ export function enemyIntent(run: IntentRun): EnemyIntent {
   return {
     style: enemy.attackStyle, name: enemy.attackName, behavior: enemy.behavior, state, incoming, nextIncoming,
     label: state === 'charge' ? '力を溜める' : state === 'heavy' ? `${enemy.attackName}・強` : enemy.attackName,
-    warning: state === 'charge' ? `今回は攻撃0。次の手は攻撃${nextIncoming}の突進。`
+    warning: enemy.pattern === 'escalating' ? `毎手＋${enemy.attackRamp ?? FINAL_BOSS_ATTACK_RAMP}。次の反撃${nextIncoming}。` : state === 'charge' ? `今回は攻撃0。次の手は攻撃${nextIncoming}の突進。`
       : nextIncoming > enemy.attack ? `次の手は強攻撃${nextIncoming}。` : `次の手の攻撃${nextIncoming}。`,
   };
 }

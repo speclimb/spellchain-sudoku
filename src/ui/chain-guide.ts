@@ -11,7 +11,7 @@ const unitName = (unit: number): string => unit < 9 ? `同じ行（${unit + 1}�
 export function capacityText(run: Run, skill: boolean, report?: Report | null, skillId: SkillId = run.character, useRescue = false): string {
   const count = report?.chain?.initialAuto ?? chainCapacity(run, skill, skillId);
   const extra = run.inventory.includes('echo') || run.inventory.includes('rekindle');
-  const carry = run.inventory.includes('wick') && (run.tier.wick ?? 1) >= 2;
+  const carry = (run.campaignVersion === 1 && run.spellLevel >= 30) || (run.inventory.includes('wick') && (run.tier.wick ?? 1) >= 2);
   const maximum = carry ? count + 1 : Math.min(count + 1, run.cells.filter(value => !value).length);
   const rescue = run.endgameBalanceVersion === 2
     ? ` · 接続の栞 ${run.rescueItems ?? 0}個（次は術式Lv.${RESCUE_ITEM_LEVEL + rescueMilestonesAt(run.spellLevel) * RESCUE_ITEM_INTERVAL}で1個）${canRescueChain(run) ? useRescue ? ` · この詠唱で使用・再接続時に1個と連鎖詠唱数${RESCUE_COST}を消費` : ' · 温存中（詠唱前に使用を選べます）' : ''}`

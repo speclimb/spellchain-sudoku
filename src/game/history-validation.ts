@@ -43,13 +43,13 @@ function cast(v: any): boolean {
       && (v.rescueRequested || v.rescueItemsBefore + v.rescueItemsGranted === v.rescueItemsAfter))
     && typeof v.freeSkill === 'boolean' && (v.skillId === undefined ? v.skillLevel === undefined : skills.includes(v.skillId) && integer(v.skillLevel,1,10))
     && v.damage === v.hpDamage+v.overkill && v.hpDamage === Math.min(v.damage,v.enemyBefore) && v.overkill === Math.max(0,v.damage-v.enemyBefore)
-    && (v.relicHealed === undefined || integer(v.relicHealed,0,Math.min(7,v.healed)))
+    && (v.relicHealed === undefined || integer(v.relicHealed,0,Math.min(21,v.healed)))
     && v.enemyAfter === Math.max(0,v.enemyBefore-v.damage) && v.hpLost === Math.min(v.hpBefore+(v.relicHealed ?? 0),v.received) && v.hpAfter === v.hpBefore-v.hpLost+v.healed
     && v.sheetTo >= v.sheetFrom && (v.stopReason === undefined || ['limit','no-target','board-complete'].includes(v.stopReason))
     && Array.isArray(v.procs) && v.procs.length <= 4 && new Set(v.procs.map((p: any) => p?.id)).size === v.procs.length
     && v.procs.every((p: any) => object(p) && ['duality','trinity','quint','sept'].includes(p.id) && typeof p.triggered === 'boolean'
       && typeof p.chance === 'number' && p.chance >= 0 && p.chance <= 1 && typeof p.value === 'number' && Number.isFinite(p.value) && p.value > 0 && known(p,['id','chance','value','triggered']))
-    && object(v.relics) && Object.entries(v.relics).every(([id,e]) => relics.has(id as any) && object(e) && integer(e.level,1,10) && integer(e.tier,1,3) && metric(e.metric,true) && known(e,['level','tier','metric']))
+    && object(v.relics) && Object.entries(v.relics).every(([id,e]) => relics.has(id as any) && object(e) && integer(e.level,1,20) && integer(e.tier,1,3) && metric(e.metric,true) && known(e,['level','tier','metric']))
     && known(v,['gameVersion','id','turn','skillId','skillLevel','spellLevel','chain','sheetFrom','sheetTo','sheetsCompleted','damage','hpDamage','overkill','received','hpLost','incoming','shield','healed','relicHealed','hpBefore','hpAfter','enemyBefore','enemyAfter','freeSkill','score','procs','relics','fuelBefore','fuelAfter','tokensBefore','tokensAfter','manaBefore','manaAfter','charged','overflowBefore','overflowAfter','overflowRestored','rescueItemsBefore','rescueItemsAfter','rescueItemsGranted','rescueRequested','stopReason']);
 }
 function build(v: any, character: string): boolean {
@@ -57,9 +57,9 @@ function build(v: any, character: string): boolean {
   if (!object(v) || v.version !== 1 || !['stage','cast','revision'].every(k => integer(v[k])) || !integer(v.spellLevel,1)
     || !known(v,['gameVersion','version','stage','cast','revision','spellLevel','relics','skills'])
     || !Array.isArray(v.relics) || v.relics.length > relics.size || !Array.isArray(v.skills) || v.skills.length > skills.length) return false;
-  const entry = (e: any) => object(e) && text(e.name,200) && text(e.description,2000) && integer(e.level,1,10);
+  const entry = (e: any, maximum = 10) => object(e) && text(e.name,200) && text(e.description,2000) && integer(e.level,1,maximum);
   return new Set(v.relics.map((e: any) => e?.id)).size === v.relics.length
-    && v.relics.every((e: any) => entry(e) && relics.has(e.id) && integer(e.tier,1,3) && known(e,['id','name','level','tier','description']))
+    && v.relics.every((e: any) => entry(e,20) && relics.has(e.id) && integer(e.tier,1,3) && known(e,['id','name','level','tier','description']))
     && new Set(v.skills.map((e: any) => e?.id)).size === v.skills.length
     && v.skills.every((e: any) => entry(e) && skills.includes(e.id) && integer(e.evolution,1,3)
       && ['intrinsic','equipped','reserve'].includes(e.role) && (e.role === 'intrinsic') === (e.id === character)
@@ -88,13 +88,13 @@ export function parseHistory(value: unknown): PlayHistory | undefined {
         if (!object(b) || !integer(b.stage) || b.stage <= stage || !text(b.enemy,100) || typeof b.boss !== 'boolean' || !['battle','victory','lost','retired'].includes(b.status)
           || typeof b.partial !== 'boolean' || !['maxChain','received','hpLost','sheetsCompleted'].every(k => integer(b[k])) || !ledger(b.ledger)
           || b.ledger.stage !== b.stage || b.ledger.boss !== b.boss || !Array.isArray(b.casts) || b.casts.length > Math.min(HISTORY_LIMITS.casts,b.ledger.casts)
-          || !Array.isArray(b.rewards) || b.rewards.length > 2 || !known(b,['gameVersions','versionHistoryPartial','stage','enemy','boss','status','partial','maxChain','received','hpLost','sheetsCompleted','ledger','casts','rewards'])) return undefined;
+          || !Array.isArray(b.rewards) || b.rewards.length > 3 || !known(b,['gameVersions','versionHistoryPartial','stage','enemy','boss','status','partial','maxChain','received','hpLost','sheetsCompleted','ledger','casts','rewards'])) return undefined;
         stage = b.stage;
         let rewardRevision = -1;
         for (const reward of b.rewards) {
           cleanVersion(reward);
           if (!object(reward) || !integer(reward.revision,1) || reward.revision <= rewardRevision || !text(reward.id,80) || !text(reward.name,200) || !text(reward.description,2000)
-            || !['legacy','skill','relic'].includes(reward.step) || !known(reward,['gameVersion','revision','id','name','description','step'])) return undefined;
+            || !['legacy','skill','relic','fusion'].includes(reward.step) || !known(reward,['gameVersion','revision','id','name','description','step'])) return undefined;
           rewardRevision = reward.revision;
         }
         for (const c of b.casts) { if (!cast(c) || c.id <= castId || c.chain > b.maxChain) return undefined; castId = c.id; }

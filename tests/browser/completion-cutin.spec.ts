@@ -182,6 +182,7 @@ test('exhausted relic pool offers repeatable growth and advances to another play
     const path = '/src/game/engine.ts';
     const { newSave, startRun } = await import(/* @vite-ignore */ path);
     const save = startRun(newSave(), 'fuse', 21);
+    delete save.run.progressionVersion; // Existing Lv.10 saves keep the original cap.
     save.meta.tutorialDone = true;
     save.settings.reducedMotion = true;
     save.run.inventory = [...save.run.pool];

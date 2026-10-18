@@ -20,7 +20,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1080 }, { name: 
     await expect(codex).not.toContainText('戦クリアで解放');
     await expect(codex).toContainText('全16種が最初の冒険から報酬候補');
     await expect(codex).toContainText('同時に使えるのは8枠');
-    await expect(codex).toContainText('Lv.10');
+    await expect(codex).toContainText('Lv.8');
     expect(await codex.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     expect(await savedText(page)).toBe(before);
     await page.screenshot({ path: `.runtime/screenshots/${viewport.name}-all-relics-codex.png`, fullPage: true });

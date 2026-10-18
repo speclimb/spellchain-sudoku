@@ -56,4 +56,24 @@ describe('relic archive growth', () => {
     expect(relicGrowthRows('trinity', 2, run)).toContain('所持中と同じLv・段階（参考）');
     expect(run).toEqual(before);
   });
+  it('uses campaign values in both introductory cards and every reference level, while retaining endless defaults', () => {
+    const run = startRun(newSave(), 'fuse', 51, 'campaign').run!;
+    run.stage = 19;
+    const before = structuredClone(run), html = relicCodex(run);
+    expect(html).toContain('Lv.が1上昇（最大8）');
+    expect(html).toContain('通常攻撃ダメージ＋15％');
+    expect(html).toContain('反撃前にHP3回復');
+    expect(relicCodex()).not.toContain('第20戦以降は2上昇');
+    expect(catalogRelicDescription('glass', 1, 1)).not.toBe(catalogRelicDescription('glass', 1, 1, 1));
+    for (const { id } of RELICS) for (const tier of [1, 2, 3]) {
+      const rows = relicGrowthRows(id, tier, run);
+      for (let lv = 1; lv <= 8; lv++) {
+        const reference = catalogRelicState(id, lv, tier, 1, run);
+        const actual = { ...run, inventory: [id], acquisitionRank: { [id]: Math.min(3, lv) }, tier: { [id]: tier }, relicLevels: { [id]: lv } };
+        expect(relicValues(reference, id)).toEqual(relicValues(actual, id));
+        expect(rows).toContain(catalogRelicDescription(id, lv, tier, 1));
+      }
+    }
+    expect(run).toEqual(before);
+  });
 });

@@ -14,6 +14,7 @@ const seedOf = (index: number) => Math.imul(index + 1, 0x9e3779b1) >>> 0;
 function fixture(stage: number, level: number, tier: number): Save {
   const save = newSave(); save.meta.clears = 99;
   const next = startRun(save, 'fuse', 73), run = next.run!;
+  delete run.progressionVersion; // Preserve the original Lv.10 completed-build reward contract.
   run.inventory = RELICS.slice(0, 8).map(relic => relic.id);
   run.relicLevels = Object.fromEntries(run.inventory.map(id => [id, level]));
   run.acquisitionRank = Object.fromEntries(run.inventory.map(id => [id, 1]));

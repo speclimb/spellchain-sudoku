@@ -1,5 +1,6 @@
 import { relicLevel, relicTierLevel } from './growth';
 import type { RelicId, RewardId, Run } from './types';
+import { fusionForRelic } from './fusions';
 
 export const RELIC_CAPACITY = 8;
 
@@ -22,6 +23,18 @@ export function prepareRelicReward(run: Run, id: RewardId, replace?: RelicId): v
     return;
   }
   if (replace === undefined || !run.inventory.includes(replace)) throw new Error('入れ替える所持遺物を選んでください。');
+  const fusion = fusionForRelic(run, replace);
+  if (fusion) {
+    // The fusion is indivisible. Archived components keep their growth, but
+    // recovering them later requires a fresh boss fusion to restore the bonus.
+    run.fusions = run.fusions?.filter(id => id !== fusion.id);
+    for (const component of fusion.components) retireRelic(run, component);
+    return;
+  }
+  retireRelic(run, replace);
+}
+
+function retireRelic(run: Run, replace: RelicId): void {
   const retired = { level: relicLevel(run, replace), rank: run.acquisitionRank[replace] ?? 1, tier: relicTierLevel(run, replace) };
   run.stowedRelics = { ...run.stowedRelics, [replace]: retired };
   run.inventory.splice(run.inventory.indexOf(replace), 1);

@@ -8,7 +8,9 @@ import type { Run, Save } from '../src/game/types';
 
 function fixture(): Save {
   const save = newSave(); save.meta.clears = 99;
-  return startRun(save, 'fuse', 73);
+  const started = startRun(save, 'fuse', 73);
+  delete started.run!.progressionVersion; // Archived legacy relics remain capped at Lv.10.
+  return started;
 }
 function rewardFixture(): Save {
   const save = fixture(), run = save.run!;

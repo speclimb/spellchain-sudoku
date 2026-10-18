@@ -249,13 +249,14 @@ describe('progression, rewards and persistence', () => {
   });
   it('does not award defenses from an enemy victory sweep, including restored reward and legacy won states', () => {
     const save = fixture(21), run = save.run!;
+    delete run.progressionVersion; // Generate a legacy-compatible reward menu before restoring a legacy victory.
     run.inventory = ['ward']; run.mana = 8; run.enemyHp = 1;
     const next = dispatch(save, play(run, singles(run.cells)[0], true)), defeated = next.run!;
     expect(defeated.lastReport!.sweep.length).toBeGreaterThan(0); expect(defeated.lastReport!.fullClear).toBe(false);
     expect(defeated.cells).toEqual(defeated.solution);
     expect(sheetShield(defeated)).toBe(defeated.lastReport!.shield);
     expect(sheetShield(parseSave(JSON.stringify(next)).run!)).toBe(defeated.lastReport!.shield);
-    const won = structuredClone(defeated); won.rewardStep = undefined; won.phase = 'won'; won.stage = 5; won.stats.kills = 6;
+    const won = structuredClone(defeated); delete won.mode; delete won.progressionVersion; won.rewardStep = undefined; won.phase = 'won'; won.stage = 5; won.stats.kills = 6;
     expect(sheetShield(won)).toBe(defeated.lastReport!.shield);
     expect(sheetShield(parseSave(JSON.stringify({ ...save, run: won })).run!)).toBe(defeated.lastReport!.shield);
   });
@@ -292,6 +293,7 @@ describe('progression, rewards and persistence', () => {
   it('keeps offering deterministic repeatable rewards as the unique relic pool runs out', () => {
     for (const missing of [2, 1, 0]) {
       const save = fixture(43), run = save.run!;
+      delete run.progressionVersion; // This fixture exercises the legacy Lv.10 reward ceiling.
       run.stage = 12; run.stats.kills = 12; run.inventory = run.pool.slice(missing); run.relicLevels = Object.fromEntries(run.inventory.map(id => [id,10])); for (const id of primeIds) run.acquisitionRank[id] = 3; run.enemyHp = 1;
       const next = dispatch(save, play(run));
       expect(next.run!.phase).toBe('reward'); expect(next.run!.stats.kills).toBe(13);
@@ -322,7 +324,7 @@ describe('progression, rewards and persistence', () => {
   });
   it('preserves old terminal victories and migrates the highest kill count safely', () => {
     const legacy = fixture(11) as any;
-    legacy.meta.wins = 1; delete legacy.meta.bestKills;
+    legacy.meta.wins = 1; delete legacy.meta.bestKills; delete legacy.run.mode; delete legacy.run.progressionVersion;
     legacy.run.stage = 5; legacy.run.stats.kills = 6; legacy.run.enemyHp = 0; legacy.run.phase = 'won';
     legacy.run.cells = [...legacy.run.solution];
     const restored = parseSave(JSON.stringify(legacy));

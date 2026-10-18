@@ -1,9 +1,8 @@
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { Random, solveSingles, countSolutions, singles } from '../src/game/sudoku.ts';
-import { MIN_BOARD_CHAIN, isChainFriendly, transformPuzzle } from '../src/game/board-generation.ts';
+import { MIN_BOARD_CHAIN, isChainFriendly, createBoardLayout } from '../src/game/board-generation.ts';
 
 const BANK_SIZE = 100;
-const LEGACY_BANK_SIZE = 30;
 const STRESS_SAMPLES = 100;
 const MIN_MASK_DISTANCE = 18;
 const MAX_GENERATION_ATTEMPTS = 20_000;
@@ -35,25 +34,29 @@ function nextPuzzle(id) {
 }
 
 function isRobustSource(source) {
-  if (!isChainFriendly({ cells: [...source.puzzle].map(Number), solution: [...source.solution].map(Number) })) return false;
+  const cells = [...source.puzzle].map(Number);
+  if (cells.filter(value => !value).length !== 36 || countSolutions(cells) !== 1 || solveSingles(cells)?.join('') !== source.solution) return false;
+  // Certify even the no-retry fallback. Old source geometry need not already
+  // support 36 inputs: the runtime certifies a legal Sudoku transformation.
+  if (!isChainFriendly(createBoardLayout(source, new Random(0), 0))) return false;
   for (let sample = 0; sample < STRESS_SAMPLES; sample++) {
     // Private stress seeds preserve the original candidate generation stream.
     const seed = (0x85ebca6b ^ Math.imul(sample + 1, 2654435761)) >>> 0;
-    if (!isChainFriendly(transformPuzzle(source, new Random(seed)))) return false;
+    if (!isChainFriendly(createBoardLayout(source, new Random(seed)))) return false;
   }
   return true;
 }
 
-// Rebuild the original sequence first, keeping every surviving source and ID.
-const bank = Array.from({ length: LEGACY_BANK_SIZE }, (_, index) => nextPuzzle(`grimoire-${String(index + 1).padStart(2, '0')}`));
-const replaced = [];
-for (let index = 0; index < bank.length; index++) {
-  if (isRobustSource(bank[index])) continue;
-  const id = bank[index].id;
-  let replacement;
-  do replacement = nextPuzzle(id); while (!isRobustSource(replacement));
-  bank[index] = replacement;
-  replaced.push(id);
+// Saved decks reference indices. Never rebuild or replace an existing source
+// when strengthening runtime screening; validate and append only.
+const bankUrl = new URL('../src/game/puzzles.json', import.meta.url);
+const existingText = readFileSync(bankUrl, 'utf8');
+const bank = JSON.parse(existingText);
+const preserved = bank.length;
+if (preserved > BANK_SIZE || new Set(bank.map(source => source.id)).size !== preserved || new Set(bank.map(source => source.puzzle)).size !== preserved) throw new Error('Invalid existing source bank; puzzles.json was not changed.');
+for (const source of bank) {
+  if (!isRobustSource(source)) throw new Error(`Source ${source.id} failed certification; puzzles.json was not changed.`);
+  seen.add(source.puzzle);
 }
 
 const blankMask = source => [...source.puzzle].map(value => value === '0');
@@ -74,7 +77,7 @@ for (let left = 0; left < masks.length; left++) {
 }
 
 // All validation completes before the source bank is written.
-writeFileSync(new URL('../src/game/puzzles.json', import.meta.url), JSON.stringify(bank, null, 2) + '\n');
-console.log(`Generated and verified ${bank.length} unique, singles-solvable puzzles with at least ${MIN_BOARD_CHAIN} natural inputs across ${STRESS_SAMPLES} sampled transforms and echo counts 0–3.`);
-console.log(`Replaced ${replaced.length} chain-fragile sources: ${replaced.join(', ') || 'none'}. Candidate attempts: ${attempts}.`);
-console.log(`Added ${bank.length - LEGACY_BANK_SIZE} sources after the preserved curated first ${LEGACY_BANK_SIZE}. Minimum blank-mask Hamming distance: ${minimumMaskDistance} (required for new sources: ${MIN_MASK_DISTANCE}).`);
+if (bank.length !== preserved) writeFileSync(bankUrl, JSON.stringify(bank, null, 2) + '\n');
+console.log(`Verified ${bank.length} unique, singles-solvable puzzles with ${MIN_BOARD_CHAIN} natural inputs across ${STRESS_SAMPLES} screened layouts and echo counts 0–5, including forced fallback.`);
+console.log(`Preserved all ${preserved} existing source indices, IDs and puzzles. Candidate attempts: ${attempts}.`);
+console.log(`Added ${bank.length - preserved} sources. Minimum blank-mask Hamming distance: ${minimumMaskDistance} (required for new sources: ${MIN_MASK_DISTANCE}).`);

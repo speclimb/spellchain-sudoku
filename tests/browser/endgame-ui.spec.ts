@@ -197,7 +197,8 @@ test('an exhausted maximum-growth boss offers both five-encounter boons and appl
     const { newSave, startRun } = await import(/* @vite-ignore */ enginePath);
     const { primeIds } = await import(/* @vite-ignore */ contentPath);
     const save = startRun(newSave(), 'fuse', 71); save.meta.tutorialDone = true; save.settings.reducedMotion = true;
-    const run = save.run; run.stage = 4; run.stats.kills = 4; run.enemyHp = 1; run.skillRank = 2;
+    const run = save.run; delete run.progressionVersion; // Legacy Lv.10 terminal pool.
+    run.stage = 4; run.stats.kills = 4; run.enemyHp = 1; run.skillRank = 2;
     run.inventory = [...run.pool]; run.maxHp -= 8; run.hp = run.maxHp;
     run.skillLevels = { fuse: 10, bridge: 10, pierce: 10, bastion: 10 };
     for (const id of run.inventory) { run.tier[id] = 3; run.relicLevels[id] = 10; }

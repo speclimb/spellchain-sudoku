@@ -11,7 +11,12 @@ import type { RelicId, RewardId, Run } from '../src/game/types';
 const supportRewards = ['training', 'vitality', 'recovery', 'magic-boon', 'defense-boon'];
 const baseRelic = (id: RewardId) => id.replace(/^(greater|apex):/, '') as RelicId;
 
-function fixture(): Run { const save = newSave(); save.meta.clears = 99; return startRun(save, 'fuse', 71).run!; }
+function fixture(): Run {
+  const save = newSave(); save.meta.clears = 99;
+  const run = startRun(save, 'fuse', 71).run!;
+  delete run.progressionVersion; // Preserve the original Lv.10 balance contract.
+  return run;
+}
 function own(run: Run, ids: RelicId[], level = 1, tier = 1) {
   run.inventory = ids; run.relicLevels = Object.fromEntries(ids.map(id => [id, level]));
   run.tier = Object.fromEntries(ids.map(id => [id, tier]));

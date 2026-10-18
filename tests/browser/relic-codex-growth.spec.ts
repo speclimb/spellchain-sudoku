@@ -10,10 +10,10 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1080 }, { name: 
     await expect(dialog.locator('.codex-growth[open]')).toHaveCount(0);
     const card = dialog.locator('[data-codex-relic="amplifier"]');
     await card.locator('summary').click();
-    await expect(card.locator('.codex-levels li')).toHaveCount(10);
+    await expect(card.locator('.codex-levels li')).toHaveCount(8);
     await expect(card.locator('[data-level="1"]')).toContainText('1.35倍相当');
     await card.getByRole('combobox').selectOption('3');
-    await expect(card.locator('[data-level="10"]')).toContainText('1.81倍相当');
+    await expect(card.locator('[data-level="8"]')).toContainText('1.78倍相当');
     await expect(card.locator('[data-level="1"]')).toContainText('極位への進化はLv.5以上');
     await card.getByRole('combobox').selectOption('2');
     await card.getByRole('combobox').selectOption('1');

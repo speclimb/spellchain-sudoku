@@ -20,6 +20,7 @@ async function prepareFullReward(page: Page, oldBoss = false) {
     initial.settings.reducedMotion = true;
     let save = startRun(initial, 'fuse', 45);
     const run = save.run;
+    delete run.progressionVersion; // This regression covers the original Lv.10 cap.
     run.inventory = RELICS.slice(0, 8).map((relic: { id: string }) => relic.id);
     run.relicLevels = Object.fromEntries(run.inventory.map((id: string) => [id, 10]));
     run.acquisitionRank = Object.fromEntries(run.inventory.map((id: string) => [id, 1]));

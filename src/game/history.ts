@@ -1,6 +1,7 @@
 import { APP_BUILD } from '../build-version';
 import { relicOf, rewardOf } from './content';
 import { enemyForRun } from './enemies';
+import { fusionOf, fusionForRelic } from './fusions';
 import { ownedSkills, skillOf, skillLevel, skillValues, skillDescriptionFor, relicGrowthDescription, relicLevel, relicTierLevel } from './growth';
 import type { Action, BattleLedger, CharacterId, EffectMetric, Phase, PrimeProcOutcome, RelicId, RewardId, Run, Save, SkillId } from './types';
 
@@ -21,7 +22,7 @@ export interface HistoryCast {
   rescueRequested?: boolean;
   stopReason?: 'limit' | 'no-target' | 'board-complete';
 }
-export interface HistoryReward { gameVersion?: string; revision: number; id: RewardId; name: string; description: string; step: string }
+export interface HistoryReward { gameVersion?: string; revision: number; id: RewardId | `fusion:${import('./types').FusionId}`; name: string; description: string; step: string }
 export interface VersionHistory { gameVersions?: string[]; versionHistoryPartial?: boolean }
 export interface HistoryBattle extends VersionHistory {
   stage: number; enemy: string; boss: boolean; status: 'battle' | 'victory' | 'lost' | 'retired';
@@ -36,7 +37,7 @@ export interface HistoryBuild {
 }
 export function snapshotBuild(run: Run, gameVersion: string | null = APP_BUILD.id): HistoryBuild {
   return { ...(gameVersion ? { gameVersion } : {}), version: 1, stage: run.stage, cast: run.castCounter, revision: run.revision, spellLevel: run.spellLevel,
-    relics: run.inventory.map(id => ({ id, name: relicOf(id).name, level: relicLevel(run, id), tier: relicTierLevel(run, id), description: relicGrowthDescription(run, id) })),
+    relics: run.inventory.map(id => { const fusion = fusionForRelic(run, id); return { id, name: fusion ? `${fusion.name} / ${relicOf(id).name}` : relicOf(id).name, level: relicLevel(run, id), tier: relicTierLevel(run, id), description: relicGrowthDescription(run, id) + (fusion ? ` 融合遺物・合計2枠。${fusion.description}` : '') }; }),
     skills: ownedSkills(run).map(id => ({ id, name: skillOf(id).name, level: skillLevel(run, id), evolution: skillValues(run, id).evolution,
       role: id === run.character ? 'intrinsic' : run.equippedSkills?.includes(id) ? 'equipped' : 'reserve', description: skillDescriptionFor(run, id) })) };
 }
@@ -110,11 +111,18 @@ export function recordHistory(save: Save, before: Run, action: Action, gameVersi
   const battle = battleFor(item, before);
   noteVersion(battle, gameVersion);
   if (action.type === 'equip') return;
+  if (action.type === 'fuse') {
+    const fusion = fusionOf(action.fusion);
+    if (!battle.rewards.some(reward => reward.revision === after.revision)) battle.rewards.push({ gameVersion, revision: after.revision, id: `fusion:${fusion.id}`, name: fusion.name,
+      description: `${fusion.components.map(id => relicOf(id).name).join(' ＋ ')}を融合。2枠を使用。素材の効果を引き継ぐ。${fusion.description}`, step: 'fusion' });
+    return;
+  }
   item.status = after.phase;
   if (action.type === 'reward') {
     if (!battle.rewards.some(r => r.revision === after.revision)) {
       const reward = rewardOf(action.relic, before);
-      const exchange = action.replace ? ` ${relicOf(action.replace).name}（Lv.${relicLevel(before, action.replace)}・${['通常', '上位', '極位'][relicTierLevel(before, action.replace) - 1]}）と交換。外した遺物の育成は再取得まで保存。` : '';
+      const retiredFusion = action.replace ? fusionForRelic(before, action.replace) : undefined;
+      const exchange = retiredFusion ? ` ${retiredFusion.name}（2枠）と交換。素材2個の育成を保管し、融合効果は解除。` : action.replace ? ` ${relicOf(action.replace).name}（Lv.${relicLevel(before, action.replace)}・${['通常', '上位', '極位'][relicTierLevel(before, action.replace) - 1]}）と交換。外した遺物の育成は再取得まで保存。` : '';
       battle.rewards.push({ gameVersion, revision: after.revision, id: action.relic, name: reward.name, description: reward.description + exchange, step: before.rewardStep ?? 'legacy' });
     }
     battle.status = 'victory';

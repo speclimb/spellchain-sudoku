@@ -3,6 +3,7 @@ export type SkillId = CharacterId | 'bridge' | 'pierce' | 'bastion';
 export type RewardStep = 'legacy' | 'skill' | 'relic';
 export type RelicId = 'wick' | 'echo' | 'rekindle' | 'pen' | 'ward' | 'stroke' | 'battery' | 'amplifier' | 'afterglow' | 'lens' | 'glass' | 'gold' | 'trinity' | 'duality' | 'quint' | 'sept';
 export type PrimeRelicId = 'duality' | 'trinity' | 'quint' | 'sept';
+export type FusionId = 'eternal-flame' | 'star-choir' | 'world-script' | 'sanctuary' | 'astral-engine' | 'dawn-heart' | 'prism-spear' | 'sevenfold-script' | 'twin-covenant' | 'fate-crown';
 export type RepeatableRewardId = 'training' | 'vitality' | 'recovery' | 'magic-boon' | 'defense-boon';
 export type GreaterRelicId = 'stroke' | PrimeRelicId | 'lens' | 'wick';
 export type RewardId = RelicId | RepeatableRewardId | 'skill-upgrade' | `greater:${GreaterRelicId}` | `apex:${RelicId}` | `skill:${SkillId}`;
@@ -83,6 +84,12 @@ export interface Report {
 export interface Preview extends Report { forecast?: Forecast }
 export interface Run {
   id: string; seed: number; randomState: number; revision: number;
+  /** Missing mode is an existing endless adventure. */
+  mode?: 'campaign' | 'endless'; campaignVersion?: 1;
+  /** New adventures use mode-specific relic caps; missing preserves old growth. */
+  progressionVersion?: 1;
+  /** Component IDs stay in inventory: a two-component fusion still costs two slots. */
+  fusions?: FusionId[]; lastFusionStage?: number;
   balanceVersion: 1 | 2; castCounter: number;
   expansionVersion?: 1; enemyRulesVersion?: 0 | 1;
   /** Missing/zero preserves the HP of an already-started pre-rebalance battle. */
@@ -110,6 +117,7 @@ export interface Run {
 }
 export type Action =
   | { type: 'play'; cell: number; skill: boolean; skillId?: SkillId; useRescue?: boolean; revision: number }
+  | { type: 'fuse'; fusion: FusionId; revision: number }
   | { type: 'reward'; relic: RewardId; replace?: RelicId; revision: number }
   | { type: 'equip'; skills: SkillId[]; revision: number };
 export interface Meta { clears: number; runs: number; wins: number; bestScore: number; bestKills: number; tutorialDone: boolean }

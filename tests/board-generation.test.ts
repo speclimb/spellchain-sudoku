@@ -5,7 +5,7 @@ import type { PuzzleSource } from '../src/game/board-generation';
 import { dispatch, longestOrigins, newSave, previewAction, startRun } from '../src/game/engine';
 import { enemyForRun } from '../src/game/enemies';
 import { parseSave } from '../src/game/storage';
-import { Random, solveSingles } from '../src/game/sudoku';
+import { Random, countSolutions, solveSingles } from '../src/game/sudoku';
 import type { Mark } from '../src/game/types';
 
 // An old source whose ordinary route can be shortened by a legal permutation.
@@ -29,7 +29,7 @@ function firstSourceSeeds(): Map<number, number> {
 
 describe('chain-friendly fresh board generation', () => {
   it('replaces a rejected geometry and preserves the authoritative random stream, including forced fallback', () => {
-    expect(isChainFriendly(rawLayout(rejectionSource))).toBe(true);
+    expect(longestNaturalChain(rawLayout(rejectionSource))).toBeGreaterThanOrEqual(30);
     const legacyRandom = new Random(5), rejected = transformPuzzle(rejectionSource, legacyRandom);
     expect(longestNaturalChain(rejected)).toBe(21);
     expect(isChainFriendly(rejected)).toBe(false);
@@ -61,30 +61,49 @@ describe('chain-friendly fresh board generation', () => {
     const sourceSeeds = firstSourceSeeds();
     for (const [sourceIndex, seed] of sourceSeeds) {
       const source = bank[sourceIndex];
-      expect(isChainFriendly(rawLayout(source)), source.id).toBe(true);
-      const run = startRun(newSave(), 'fuse', seed).run!;
+      const fallback = createBoardLayout(source, new Random(0), 0);
+      expect(isChainFriendly(fallback), source.id).toBe(true);
+      expect(countSolutions(fallback.cells), source.id).toBe(1);
+      expect(solveSingles(fallback.cells), source.id).toEqual(fallback.solution);
+      const run = startRun(newSave(), 'fuse', seed, 'campaign').run!;
       // This oracle certifies the natural route, without the optional Lv.100 rescue.
       delete run.endgameBalanceVersion;
+      delete run.campaignVersion;
       expect(run.puzzleOrder[run.puzzleCursor]).toBe(sourceIndex);
       expect(run.cells.filter(value => !value)).toHaveLength(36);
       run.spellLevel = 100;
-      for (const echoes of [0, 1, 2, 3]) {
-        run.inventory = echoes ? ['echo'] : [];
-        run.relicLevels = echoes ? { echo: echoes === 1 ? 1 : echoes === 2 ? 5 : 10 } : {};
+      for (const echoes of [0, 1, 2, 3, 5]) {
+        run.inventory = echoes === 5 ? ['echo', 'sept'] : echoes ? ['echo'] : [];
+        run.fusions = echoes === 5 ? ['star-choir'] : [];
+        run.relicLevels = echoes === 5 ? { echo: 10, sept: 10 } : echoes ? { echo: echoes === 1 ? 1 : echoes === 2 ? 5 : 10 } : {};
+        run.tier = echoes === 5 ? { echo: 3, sept: 3 } : {};
         const before = structuredClone(run);
         const actual = longestOrigins(run).length;
-        expect(actual, `${source.id}, Echo ${echoes}`).toBeGreaterThanOrEqual(MIN_BOARD_CHAIN);
+        expect(actual, `${source.id}, Echo ${echoes}`).toBe(MIN_BOARD_CHAIN);
         expect(longestNaturalChain({ cells: run.cells, solution: run.solution }, echoes)).toBe(actual);
         expect(run).toEqual(before);
       }
     }
   }, 30_000);
 
+  it('certifies full-sheet paths over varied legal geometries without touching the source bank', () => {
+    const original = JSON.stringify(bank);
+    for (const source of bank) for (const seed of [1, 5, 17, 71, 0xffffffff]) {
+      const random = new Random(seed), reference = new Random(seed);
+      transformPuzzle(source, reference);
+      const layout = createBoardLayout(source, random);
+      expect(random.state).toBe(reference.state);
+      expect(layout.cells.filter(value => !value)).toHaveLength(36);
+      for (const echoes of [0, 1, 2, 3, 4, 5]) expect(longestNaturalChain(layout, echoes), `${source.id}, seed ${seed}, Echo ${echoes}`).toBe(36);
+    }
+    expect(JSON.stringify(bank)).toBe(original);
+  }, 30_000);
+
   it('preserves the source deck and legacy random draws for fresh marks', () => {
-    for (const seed of [1, 5, 17, 71, 0xffffffff]) {
+    for (const mode of ['campaign', 'endless'] as const) for (const seed of [1, 5, 17, 71, 0xffffffff]) {
       const random = new Random(seed), order = random.shuffle(bank.map((_, index) => index));
       transformPuzzle(bank[order[0]], random);
-      const run = startRun(newSave(), 'fuse', seed).run!;
+      const run = startRun(newSave(), 'fuse', seed, mode).run!;
       const marked = random.shuffle(run.cells.flatMap((value, cell) => value ? [] : [cell])).slice(0, 6);
       const marks = Array<Mark>(81).fill(null);
       marked.forEach((cell, index) => { marks[cell] = index < 3 ? 'weak' : 'shield'; });
@@ -109,7 +128,7 @@ describe('chain-friendly fresh board generation', () => {
   });
 
   it('replays filtered future sheets identically in preview, execution, and saved results', () => {
-    const save = startRun(newSave(), 'fuse', 71), run = save.run!;
+    const save = startRun(newSave(), 'fuse', 71, 'campaign'), run = save.run!;
     run.stage = 40; run.stats.kills = 40; run.enemyHp = enemyForRun(run).hp;
     run.hp = run.maxHp = 10000; run.spellLevel = 90;
     run.inventory = ['wick']; run.tier.wick = 2;

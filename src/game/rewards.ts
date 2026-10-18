@@ -1,7 +1,7 @@
 import { REPEATABLE_REWARDS, characterOf, greaterIds, primeIds, relicOf } from './content';
 import type { Random } from './sudoku';
 import type { GreaterRelicId, RelicId, RewardId, Run, SkillId } from './types';
-import { MAX_EQUIPPED_SKILLS, SKILLS, relicLevel, relicTierLevel, skillLevel } from './growth';
+import { MAX_EQUIPPED_SKILLS, SKILLS, relicLevel, relicLevelGain, relicMaxLevel, relicTierLevel, skillLevel } from './growth';
 import { RELIC_CAPACITY } from './relic-slots';
 
 function canTakeLegacyReward(run: Run, id: RewardId): boolean {
@@ -44,6 +44,8 @@ function rollLegacyRewards(run: Run, random: Random): RewardId[] {
 const isBoss = (run: Run) => run.balanceVersion === 2 && (run.stage + 1) % 5 === 0;
 const basicRepeatables: RewardId[] = ['training', 'vitality', 'recovery'];
 const SUPPORT_REWARD_CHANCE = 0.25;
+/** One draw for the whole ordinary menu, never one draw per owned relic. */
+export const ORDINARY_EVOLUTION_CHANCE = 0.15;
 function isRelicId(run: Run, value: string): value is RelicId { return run.pool.includes(value as RelicId); }
 const isEvolution = (id: RewardId) => id.startsWith('greater:') || id.startsWith('apex:');
 const relicIdOf = (id: RewardId) => (id.startsWith('greater:') ? id.slice(8) : id.startsWith('apex:') ? id.slice(5) : id) as RelicId;
@@ -79,13 +81,14 @@ export function canTakeReward(run: Run, id: RewardId): boolean {
   if (step !== 'relic') return false;
   if (id.startsWith('greater:')) {
     const relic = id.slice(8) as GreaterRelicId;
-    return boss && greaterIds.includes(relic) && run.pool.includes(relic) && relicTierLevel(run, relic) < 2;
+    return (boss || run.progressionVersion === 1 && run.inventory.includes(relic))
+      && greaterIds.includes(relic) && run.pool.includes(relic) && relicTierLevel(run, relic) < 2;
   }
   if (id.startsWith('apex:')) {
     const relic = id.slice(5) as RelicId, tier = relicTierLevel(run, relic);
-    return boss && isRelicId(run, relic) && run.inventory.includes(relic) && tier < 3 && (tier === 1 || relicLevel(run, relic) >= 5);
+    return (boss || run.progressionVersion === 1) && isRelicId(run, relic) && run.inventory.includes(relic) && tier < 3 && (tier === 1 || relicLevel(run, relic) >= 5);
   }
-  return isRelicId(run, id) && relicLevel(run, id) < 10;
+  return isRelicId(run, id) && relicLevel(run, id) < relicMaxLevel(run);
 }
 function fillChoices(chosen: RewardId[], random: Random): RewardId[] {
   chosen.push(...random.shuffle(basicRepeatables).filter(id => !chosen.includes(id)).slice(0, 3 - chosen.length));
@@ -106,17 +109,27 @@ export function rollSkillRewards(run: Run, random: Random): RewardId[] {
 export function rollRelicRewards(run: Run, random: Random): RewardId[] {
   const context: Run = { ...run, rewardStep: 'relic' };
   const boss = isBoss(run);
+  const evolutionFor = (relic: RelicId): RewardId => greaterIds.includes(relic as GreaterRelicId) && relicTierLevel(run, relic) === 1
+    ? `greater:${relic as GreaterRelicId}` : `apex:${relic}`;
+  let ordinaryEvolution: RewardId | undefined;
+  if (!boss && run.progressionVersion === 1) {
+    const eligible = run.pool.filter(relic => run.inventory.includes(relic)).map(evolutionFor).filter(id => canTakeReward(context, id));
+    if (eligible.length && random.next() < ORDINARY_EVOLUTION_CHANCE) ordinaryEvolution = random.shuffle(eligible)[0];
+  }
   // Keep the cross-sheet path visible in newly rolled growth rewards. It uses
   // the existing missing/owned slot, remains optional, and never rewrites saves.
   const wickOffer: RewardId | undefined = run.expansionVersion && run.balanceVersion === 2 && run.rewardStep !== 'legacy'
-    ? run.inventory.includes('wick') ? 'greater:wick' : run.stage >= 2 ? 'wick' : undefined
+    ? run.inventory.includes('wick') ? boss ? 'greater:wick' : undefined : run.stage >= 2 ? 'wick' : undefined
     : undefined;
   const candidates: RewardId[] = [];
   for (const relic of run.pool) {
+    if (ordinaryEvolution && relicIdOf(ordinaryEvolution) === relic) {
+      candidates.push(ordinaryEvolution);
+      continue;
+    }
     const variants: RewardId[] = [relic];
     if (boss && run.inventory.includes(relic)) {
-      if (greaterIds.includes(relic as GreaterRelicId) && relicTierLevel(run, relic) === 1) variants.push(`greater:${relic as GreaterRelicId}`);
-      else variants.push(`apex:${relic}`);
+      variants.push(evolutionFor(relic));
     }
     const eligible = variants.filter(id => canTakeReward(context, id));
     if (eligible.length) {
@@ -137,7 +150,7 @@ export function rollRelicRewards(run: Run, random: Random): RewardId[] {
   const balanced = run.relicBalanceVersion === 1;
   const missing = missingCandidates.find(id => id === wickOffer) ?? (balanced ? missingCandidates[0] : missingCandidates.find(id => affinityIds.includes(id as RelicId)) ?? missingCandidates[0]);
   const upgradeCandidates = available.filter(id => run.inventory.includes(relicIdOf(id)));
-  const upgrade = upgradeCandidates.find(id => id === wickOffer) ?? (boss
+  const upgrade = ordinaryEvolution ?? upgradeCandidates.find(id => id === wickOffer) ?? (boss
     ? weightedChoice(upgradeCandidates, id => (isEvolution(id) ? 2 : 1) * (!balanced && affinityIds.includes(relicIdOf(id)) ? 1.35 : 1), random)
     : balanced ? upgradeCandidates.find(id => !missing || relicOf(relicIdOf(id)).kind !== relicOf(relicIdOf(missing)).kind) ?? upgradeCandidates[0]
       : upgradeCandidates.find(id => affinityIds.includes(relicIdOf(id))) ?? upgradeCandidates[0]);
@@ -208,7 +221,7 @@ export function applyGrowthReward(run: Run, id: RewardId): boolean {
   } else if (!greater && !apex) {
     // Legacy prime rewards are acquisition upgrades only; do not reinterpret a
     // previously sampled choice as a new kind of bonus during migration.
-    run.relicLevels = { ...run.relicLevels, [relic]: run.rewardStep === 'legacy' ? before : Math.min(10, before + 1) };
+    run.relicLevels = { ...run.relicLevels, [relic]: run.rewardStep === 'legacy' ? before : Math.min(relicMaxLevel(run), before + relicLevelGain(run)) };
     if (primeIds.includes(relic)) run.acquisitionRank[relic] = Math.min(3, (run.acquisitionRank[relic] ?? 1) + 1);
   }
   if (greater) run.tier[relic] = Math.max(2, oldTier);
